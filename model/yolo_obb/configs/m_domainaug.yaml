@@ -1,0 +1,41 @@
+# Issue #64 の domain gap 対応: 実カメラ環境 (照明・取り付け角度・距離感 差) への
+# robustness 向上を狙った augment 強化版。m_lowaug と同じ base 設定で、
+# Geometry 5 param + HSV 3 param を default 超えて上乗せする。
+#
+# 想定 use case: m_lowaug_v3/best.pt を実カメラで smoke check したら検出精度低かった
+# ため、augment 強化で fine-tune し直す。学習 dataset (G1_WBT lab の cam_0 400 枚) は
+# 変えない = domain 追加ではなく既存 range の学習分布を広げるアプローチ。
+#
+# vs m_lowaug の差:
+#   Geometry:
+#     degrees:    0.0    -> 5.0    (頭カメラ取り付け角度差、±5°)
+#     translate:  0.1    -> 0.15   (被写体位置ズレ耐性)
+#     scale:      0.5    -> 0.6    (距離感差)
+#     shear:      0.0    -> 3.0    (せん断、perspective 補助)
+#     perspective:0.0    -> 0.0005 (弱透視、YOLO 推奨 0-0.001 の中央)
+#   Lighting (照明差が大きいので特に強化):
+#     hsv_h:      0.015  -> 0.02   (色相 ±2%、色温度差の吸収)
+#     hsv_s:      0.7    -> 0.8    (彩度 ±80%)
+#     hsv_v:      0.4    -> 0.8    (明度 ±80%、m_lowaug の 2 倍。蛍光灯 / LED /
+#                                    自然光の照度・色温度差を吸収する狙い)
+model: m
+epochs: 100
+batch: 4
+imgsz: 640
+freeze: 0
+patience: 20
+optimizer: auto
+mosaic: 0.5
+mixup: 0.0
+# Geometry augment
+degrees: 5.0
+translate: 0.15
+scale: 0.6
+shear: 3.0
+perspective: 0.0005
+# Lighting augment (照明環境差の吸収がここの主目的)
+hsv_h: 0.02
+hsv_s: 0.8
+hsv_v: 0.8
+run_name: m_domainaug
+seed: 42

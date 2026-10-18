@@ -1,0 +1,23 @@
+# Issue #108 v10_no_flat_imgsz800: v10_hsv07 stack から v4_flat のみ除外
+# base: v10_hsv07 (fliplr=0/erasing=0/hsv_v=0.7) + dataset_v10_no_flat (v5_material + v8_zoomout のみ)
+# 検証目的: v10 dataset + bug fix 後で v4_flat 抜きの寄与差を測定。
+model: m
+epochs: 100
+batch: 4
+imgsz: 800
+freeze: 0
+patience: 20
+optimizer: auto
+mosaic: 0.5
+mixup: 0.0
+run_name: m_lowaug_v10_no_flat_imgsz800
+seed: 42
+data: data/yolo_obb/configs/dataset_v10_no_flat.yaml
+workers: 2
+scale: 0.6
+translate: 0.2
+degrees: 10.0
+perspective: 0.001
+fliplr: 0.0
+erasing: 0.0
+hsv_v: 0.7

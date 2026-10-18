@@ -1,0 +1,51 @@
+# 公開用 repo (ramen-g1-ikea-assembly) の unit test (Issue #190)。
+# private repo にも置くが、job は公開用 repo でだけ動く。
+# 公開用 repo には運営の interface package が無いので、会場の経路の test は skip になる (conftest.py)。
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pytest:
+    if: github.repository == 'matsuolab-llmcompe2025-team-suzuki/ramen-g1-ikea-assembly'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # runtime 環境は Unitree SDK を path で入れる (pixi.toml)。実機で通信を確かめた commit に固定
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: unitreerobotics/unitree_sdk2_python
+          ref: 65691c8a8bc53b98d3976dba4dbf9d5d20b2e7f5
+          path: third_party/unitree_sdk2_python
+          persist-credentials: false
+
+      # cache は使わない: 2.9 GB の cache を戻す (96 秒) より、lock どおりに入れ直す (79 秒) 方が速かった
+      - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
+        with:
+          pixi-version: v0.72.0
+          environments: default runtime
+          locked: true
+          cache: false
+
+      # README の軽い確かめ。default env (torch・SDK 無し) でも通ることを守る (Issue #192)
+      - name: pytest (default environment, lower_policy)
+        run: pixi run test-lower-policy
+
+      # 学習 (model/・data/) の test は別の pixi 環境が要るので入れない
+      - name: pytest
+        run: pixi run -e runtime pytest inference/desktop/ evaluate/model_evaluation/

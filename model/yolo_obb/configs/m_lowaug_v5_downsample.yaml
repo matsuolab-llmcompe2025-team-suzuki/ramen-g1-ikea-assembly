@@ -1,0 +1,14 @@
+# Issue #108 v5_downsample: move_to_table 50% downsample、bg augment なし
+# base: m_lowaug (v3 と bit-perfect 同一 hyperparams)、data だけ v5_downsample に切替
+model: m
+epochs: 100
+batch: 4
+imgsz: 640
+freeze: 0
+patience: 20
+optimizer: auto
+mosaic: 0.5
+mixup: 0.0
+run_name: m_lowaug_v5_downsample
+seed: 42
+data: data/yolo_obb/configs/dataset_v5_downsample.yaml

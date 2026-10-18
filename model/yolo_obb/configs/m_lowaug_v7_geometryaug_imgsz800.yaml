@@ -1,0 +1,29 @@
+# Issue #108 v7_geometryaug_imgsz800: v6 の遠方小 object 検出漏れ対策
+# base: v6_geometryaug (chroma-key material aug + geometry aug) + imgsz 640->800 + geometry aug 緩和
+#
+# v6 の副作用 (video compare で発見): scale 0.8 で image が 20% まで縮小されると、遠方小 object
+# (奥の leg/hand/hole 等) が数 pixel サイズになり train 不能 → 小 object 検出漏れが増加。
+#
+# 対策:
+# - imgsz 640 -> 800: 小 object の absolute pixel 数を +56% (640^2 vs 800^2)、augment 後も visible
+# - scale 0.8 -> 0.6: 縮小 range を [0.4, 1.6] -> [0.4, 1.6] (min は同じ) だが augment の実効変動範囲縮小
+# - translate 0.3 -> 0.2: canvas 外 clip 軽減
+# - degrees 15 -> 10: 回転 range 縮小で小 object 消失軽減
+model: m
+epochs: 100
+batch: 4            # imgsz 800 で batch 4 は 3060 Ti 8GB borderline、fail なら batch 3 に落とす
+imgsz: 800
+freeze: 0
+patience: 20
+optimizer: auto
+mosaic: 0.5
+mixup: 0.0
+run_name: m_lowaug_v7_geometryaug_imgsz800
+seed: 42
+data: data/yolo_obb/configs/dataset_v5_material.yaml
+workers: 2
+# Geometry aug 緩和 (v6 -> v7: 小 object 保護を優先)
+scale: 0.6          # 0.8 -> 0.6
+translate: 0.2      # 0.3 -> 0.2
+degrees: 10.0       # 15 -> 10
+perspective: 0.001

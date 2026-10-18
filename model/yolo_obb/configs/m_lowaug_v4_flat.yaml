@@ -1,0 +1,19 @@
+# Issue #77 v4_flat: 背景 copy-paste augmentation の ablation
+# base: m_lowaug (v3 と同じ hyperparams)、data だけ v4_flat に切替
+# ざっくり内訳:
+#   v4_flat: 全 skill x3 bg augment (17% move balance 保持、control run)
+#   v4_r40:  move_to_table x2 bg (39% ratio)
+#   v4_r45:  move_to_table x3 bg (46% ratio)
+#   v4_r50:  move_to_table x4 bg (51% ratio)
+model: m
+epochs: 100
+batch: 4
+imgsz: 640
+freeze: 0
+patience: 20
+optimizer: auto
+mosaic: 0.5
+mixup: 0.0
+run_name: m_lowaug_v4_flat
+seed: 42
+data: data/yolo_obb/configs/dataset_v4_flat.yaml

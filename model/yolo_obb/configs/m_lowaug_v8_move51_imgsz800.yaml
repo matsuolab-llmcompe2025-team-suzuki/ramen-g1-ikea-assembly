@@ -1,0 +1,24 @@
+# Issue #108 v8_move51_imgsz800: v8 stack + move 51% (v4_r50 pattern を v8 aug 環境で踏襲)
+# base: v8_zoomout_imgsz800 + data だけ dataset_v8_move51.yaml (move-only augment N=13 追加で ratio 49.9%)
+#
+# ablation 目的: v8 環境 (workspace 改善済) で move 割合 51% の追加効果を検証。
+# v5_downsample (bg なし + move 51%) は v3 と同等 = move 単独効果なし判明済み。
+# v4_r50 (bg augment + move 51%) は mAP50-95 top = bg augment との協同効果と切り分け済み。
+# v8 (workspace 改善済) で move 51% を stack すると mAP50-95 追加改善するかを確定させる。
+model: m
+epochs: 100
+batch: 4
+imgsz: 800
+freeze: 0
+patience: 20
+optimizer: auto
+mosaic: 0.5
+mixup: 0.0
+run_name: m_lowaug_v8_move51_imgsz800
+seed: 42
+data: data/yolo_obb/configs/dataset_v8_move51.yaml
+workers: 2
+scale: 0.6
+translate: 0.2
+degrees: 10.0
+perspective: 0.001

@@ -1,0 +1,14 @@
+# curation output data (managed via HF sync, see workspace/README.md)
+workspace/labels.parquet
+workspace/labels.jsonl
+workspace/failure_categories.json
+workspace/metadata.json
+workspace/labels_backup/
+workspace/videos_cache/
+
+# python cache
+**/__pycache__/
+.pytest_cache/
+
+# pixi
+.pixi/

@@ -1,0 +1,17 @@
+# run で生成される dataset (images/labels/split_manifest.json)
+dataset/
+
+# Issue #108 v5 experimental datasets (re-generable via seed=42 scripts)
+dataset_v5*/
+
+# HF DL 一時 cache
+.hf_cache/
+
+# Issue #77: augmentation の background pool / 合成データ / cache は非管理
+augmentation/backgrounds/
+augmentation/synthetic/
+augmentation/.cache/
+
+# Python
+__pycache__/
+*.pyc

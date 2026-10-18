@@ -1,0 +1,22 @@
+# YOLO OBB dataset config (v11a: Cycle 1 = v10 + head_left cycle1 100 frames)
+# base: dataset_v10 と同じ train list に `head_left/cycle1/images` (101 frame, user 修正済) を追加。
+# 目的: head_left mp4 の新環境 domain gap 埋め (Cycle 1 = pilot、Cycle 2 で残り frame 追加想定)。
+# val は v10 と同じ (dataset/images/val) → v10_hsv07 との比較で新環境 100 追加の効果を測る。
+path: /home/ubuntu/work_dir/iros/iros_2026_ramen/data/yolo_obb
+train:
+  - dataset/images/train
+  - augmentation/synthetic/v5_material_random/images
+  - augmentation/synthetic/v8_zoomout_random/images
+  - augmentation/synthetic/v4_flat/images
+  - head_left/cycle1/images
+val: dataset/images/val
+
+nc: 7
+names:
+  0: workspace
+  1: leg
+  2: leg_tip
+  3: hole
+  4: table_top
+  5: hand_right
+  6: hand_left

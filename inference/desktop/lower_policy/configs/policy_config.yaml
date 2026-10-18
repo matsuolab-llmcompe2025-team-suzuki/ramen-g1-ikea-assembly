@@ -1,0 +1,873 @@
+# Learned policy variant registry (Issue #125 Phase 7)。
+#
+# variant 名 = 内部 conceptual identifier (backbone × mode)、HF repo 名は ckpt_ref
+# に保持。実運用で "今日は GR00T baseline、明日は RAMEN-Ori C-2" みたいに config
+# swap で切替える (CLI arg or entrypoint config で variant 指定)。
+#
+# 全 combination:
+# - GR00T: 2 mode (none / overlay)。GR00T は explicit OBB token channel が無い
+#   ので precomputed_token 非対応。
+# - RAMEN-Ori: 3 mode (none / overlay / precomputed_token)。C-2 (token) は独自 channel、
+#   C-11 (overlay) は backbone hint、default (none) は OBB signal 無し。
+#
+# ckpt_ref format:
+#   HF repo: "Team-RAMEN/<repo>@<optional_sha>" (@revision は再現性 pin 用)
+#   Local:   "/path/to/ckpt.pt" (dev/debug 用)
+#   Null:    未 train / まだ ckpt 上がってない (from_ckpt() 呼ぶと error)
+
+# Real-Time Chunking (RTC、Issue #137)。variant 単位で `rtc:` ブロックを足すと
+# 有効化できる。未記載なら無効 = 従来経路そのまま。
+#
+#   rtc:
+#     enabled: true         # RTC on/off
+#     frozen_steps: auto    # auto = 実測 latency と tick 周期から毎回算出。
+#                           # int 固定も可 (実測: GR00T 3 / RAMEN-Ori 1-2)
+#     overlap_steps: null   # null = execution_steps を流用。実行時に
+#                           # min(残り chunk 行数, overlap_steps) でクランプ
+#     ramp_rate: 6.0        # 前 chunk から離れる指数 ramp の rate (本家既定)
+#
+# policy_type: groot_pick_legs は別 embodiment/schema のため enabled: true を reject。
+# 重み式の詳細は inference/desktop/lower_policy/rtc.py の module docstring 参照。
+#
+# RAMEN-Ori の async 化 (Issue #137 Phase C-1b)。既定 (replan_family 未設定) は
+# 毎 tick 同期推論で chunk 全体を返す従来動作で、実機実測 16.2Hz。学習データは
+# 30fps なので実時間では teacher の約半分の速さで動いている。
+#
+#   replan_family: ramen_ori_flow_v1   # async 化 = 30Hz 狙い。RTC の前提でもある
+#   execution_steps: 8                  # chunk_len 16 に対し重なり 8
+#   temporal_lambda: -0.1               # null で TE off
+#
+# RTC は「推論中に既に送信済みの action」を凍結する手法なので、同期実行では
+# frozen が定義上 0 になり soft ramp しか効かない。async と併せて使うこと。
+#
+# overlay 画像を通す jpg の色差 (Issue #139)。overlay mode の ckpt は box を描いた head 画像を
+# jpg 保存した cache で学習しているので、推論でも同じ jpg に 1 回通す。色差は焼き込みの時期で違う。
+#
+#   overlay_jpeg_subsampling: "4:4:4"   # 既定。Issue #139 の統合 cache (2026-09-12 以降の焼き込み)
+#   overlay_jpeg_subsampling: "4:2:0"   # それより前の焼き込み (GR00T #129 / RAMEN-Ori Phase K)
+#
+# 新しい cache で学習した ckpt は書かなくてよい。クォート必須 (YAML はクォート無しの
+# 4:2:0 を整数として読む)。
+
+# 本番 (Phase 3 の stage 実行) で使う variant。**どれで走るかの正本はここ** (Issue #148)。
+#
+# entrypoint は `--policy-variant-*` が渡されなかった slot だけをこの値で埋める。
+# CLI は常に勝つので、評価で別の ckpt を試すときは今までどおり明示で上書きする。
+# 埋めるのはその run の stage が要る slot だけで、stage 0 は 1 つも載らず、
+# stage 1 は rotate_table_base を載せない (載せると「使わない policy」で弾かれる)。
+#
+# 値は policies: の key でなければならない (無い名前を書くと起動時に落ちる)。
+default_variant_by_skill:
+  # 会場の遅い腕に慣らした追加学習 (Issue #188、2026-09-30)。会場の腕での手先の誤差 24.4 mm
+  # (前の既定 141 は 38.1 mm)。前の既定 (#141 の state_dropout) は 2026-10-09 (Issue #190) に model を消した。
+  rotate_table_base: rotate_table_base_ramen_ori_venue_all6_20k
+  # 会場の遅い腕に慣らした追加学習の RAMEN-Ori に pick 全部を任せる (hybrid なし、下の pick_leg_hybrid、
+  # Issue #188、2026-09-30 ユーザー決定)。前の既定 (hybrid + groot_pick_legs_v1、#148) は R で選べる候補に残す。
+  pick_table_leg: pick_table_leg_ramen_ori_venue_all6_20k
+  # 会場の遅い腕に慣らした追加学習の RAMEN-Ori (Issue #188、2026-09-30 ユーザー決定。会場の腕での手先の誤差 12.0 mm)。
+  # 前の既定 insert_table_leg_diffusion_optimal_100k は R で選べる候補に残す。
+  insert_table_leg: insert_table_leg_ramen_ori_venue_all6_20k
+  rotate_leg_to_tighten: groot_rotate_leg_200k
+  # flip の学び直し (区間の選別 + 腕のずらし) の RAMEN-Ori a_n15 (Issue #190、2026-10-10 ユーザー決定。9/30 に本番用に
+  # 選んだ物で、実機ではまだ確かめていない)。前の既定 groot_flip_table_n17_2_legacy_fk は R で選べる候補に残す。
+  flip_table: flip_table_ramen_ori_flip_sel_a_n15_20k
+
+# R のときに選べる候補 (Issue #188)。skill → policies: の key の list。`--gpu-models plan` の run で使う。
+# 既定 (default_variant_by_skill / --policy-variant-*) と同じ候補は起動時に除く。空なら今と同じ。
+# pick だけ、`{variant: <名前>, pick_leg_hybrid: true / false}` と書くと hybrid で使う / hybrid を使わず学習 policy に
+# pick 全部を任せる。名前だけなら既定と同じやり方。hybrid の区間 1 に使えるのは pick_leg_hybrid.HYBRID_PHASE1_VARIANTS だけ。
+# 候補は既定と同じ開始姿勢であること (違えば起動時に止まる)。
+# ⚠️ 会場はオフライン: 提出物の事前取得 (tools/prefetch_weights.py) にこの list も足すこと。
+# 選んだ物 (2026-09-30、ユーザー決定): 既定を会場の腕の追加学習 (*_venue_all6_20k) に替えた skill は前の既定、
+# それ以外は会場の腕の追加学習。
+alternatives_by_skill:
+  rotate_table_base: []  # 前の既定 (#141) は model を消した (2026-10-09)
+  pick_table_leg:
+    - {variant: groot_pick_legs_v1, pick_leg_hybrid: true}  # 前の既定 (hybrid + GR00T、実機で確かめた)
+    - {variant: pick_table_leg_ramen_ori_venue_all6_20k, pick_leg_hybrid: true}  # hybrid の区間 1 を RAMEN-Ori に
+  insert_table_leg: [insert_table_leg_diffusion_optimal_100k]  # 前の既定 (Diffusion 100k)
+  rotate_leg_to_tighten: []
+  flip_table:  # 前の既定 (GR00T の v2 baseline 20k、近い成功の手先の FK の定義だけを持つ)。2026-10-10 に既定を a_n15 に替えた
+    - groot_flip_table_n17_2_legacy_fk
+
+# Stage 1〜4 の pick を hybrid (VLM → 学習 policy で掴む → IK で運ぶ → ルールで持ち替え) で動かすか
+# (Issue #188)。false = default_variant_by_skill.pick_table_leg の学習 policy に pick 全部を任せる。
+# --pick-leg-hybrid / --no-pick-leg-hybrid が優先。hybrid は alternatives_by_skill の
+# {pick_leg_hybrid: true} で R の候補に残せる (--gpu-models plan のとき)。
+pick_leg_hybrid: false
+
+# `--gpu-models plan` の読み方 (Issue #188)。1 Stage の run で、起動時は最初の skill の main
+# だけを待ち、残りは 1 本ずつ順に読む: 最初の skill の候補 → preload_through_skill までの
+# skill の main → 候補。それより後ろの skill は、その前の保持に入ったときに main → 候補
+# (保持が待つのは main だけ)。先へ進んだ skill の model は次の保持で解放する。
+# 読むのは腕が止まっている間 (開始待ち・保持・R の後の待ち) だけ。load_while_policy_runs に
+# 書いた種類 (groot / groot_pick_legs / groot_pick_legs_ee_rel / act_diffusion / ramen_ori /
+# vlm) だけは policy が動いている間にも読む。空 = 全部止まっている間だけ (制御ループと
+# 処理・GPU を取り合わない)。
+model_loading:
+  preload_through_skill: pick_table_leg
+  load_while_policy_runs: []
+
+# model の組み合わせを名前で切り替える (Issue #159)。会場で焼き直さずに、起動の引数
+#   ramen-venue --stage <N> --policy-variant-set <名前>     (自前経路も同じ引数)
+# で使う。書いた skill だけ default_variant_by_skill を差し替え、書いていない skill は
+# 既定のまま。skill ごとの上書き (--policy-variant-<slot>) がこれより優先する。
+# 値は policies: の key。
+#
+# ⚠️ 切り替え先は **image に焼いた policies: の slot** に限られる。新しい ckpt
+#    を使うには slot を足して焼き直すこと。
+# ⚠️ 会場は実行時オフライン。提出物の事前取得 (tools/prefetch_weights.py) は既定と
+#    **ここにある set 全部**の重みを取る。set に無い slot へ切り替えると、重みが cache に
+#    無くて起動時に止まる。会場で使うかもしれない組み合わせはここに書いておく。
+variant_sets:
+  # 2026-10-09 (Issue #190): #141 の 2 slot の組み合わせ ramen_ori は model を消したので外した。
+  # 会場の候補 (Issue #161): pick 以外を #155 の 6 skill 統合 RAMEN-Ori にする。step は
+  # 仮に 400k (insert が頭打ちに達した点)。4 skill で同じ ckpt 1 本 (3.5 GB) を使う。
+  # 1 skill だけ替えるなら --policy-variant-<slot> <skill>_ramen_ori_all6_400k。
+  all6_400k:
+    rotate_table_base: rotate_table_base_ramen_ori_all6_400k
+    insert_table_leg: insert_table_leg_ramen_ori_all6_400k
+    rotate_leg_to_tighten: rotate_leg_to_tighten_ramen_ori_all6_400k
+    flip_table: flip_table_ramen_ori_all6_400k
+  # 会場の腕に慣れさせた追加学習 (Issue #188)。台を回す・insert を 20k に替える (flip の 20k は 2026-10-09 に
+  # model を消した)。pick は既定のまま
+  # (pick の slot は policies: の説明どおり --policy-variant-pick で hybrid の区間 1 か、--no-pick-leg-hybrid で単独)。
+  venue_arm:
+    rotate_table_base: rotate_table_base_ramen_ori_venue_all6_20k
+    insert_table_leg: insert_table_leg_ramen_ori_venue_all6_20k
+
+policies:
+  # Issue #137: execution_steps は chunk_len (GR00T 16) より小さくすること。
+  # 重なり = chunk_len - execution_steps が temporal ensemble の blend 区間で、
+  # 16 だと重なり 0 = blend が一度も起きない (実機 insert がこれに該当)。
+  # 8 = 重なり 8 step で blend 率 50%、本家 Isaac-GR00T deployment guide の
+  # 例示 (--execution-horizon 8) とも一致。
+  # ---- insert_table_leg (LeRobot GR00T、REAL_G1_RELATIVE_EEF、200k step) ---- #
+
+  groot_insert_leg_200k:
+    policy_type: groot
+    mode: none
+    # takada finetune (LeRobot fork wrapper)、200k step。150k もあり、coarse_insert
+    # のみの Dex1_v2 は insert 全体ではなく前半 phase 特化 (別 variant として追加可)。
+    ckpt_ref: Team-RAMEN/IROS2026_RAMEN_takada_insert_leg_optimal_gr00t_200k@0f0927bcc1aed6927fb26b82c017009961ee3d35
+    device: cuda
+    dtype: bf16
+    replan_family: "groot_relative_eef_v1"  # Phase 4: 同 embodiment
+    execution_steps: 8
+
+  # ---- rotate_leg_to_tighten (LeRobot GR00T、curated optimal) ---- #
+
+  groot_rotate_leg_160k:
+    policy_type: groot
+    mode: none
+    ckpt_ref: Team-RAMEN/IROS2026_RAMEN_takada_rotate_leg_to_tighten_optimal_gr00t_160k@4c6bc5c29e3b4f8dfaaefd6285d0fe004780dbda
+    device: cuda
+    dtype: bf16
+    replan_family: "groot_relative_eef_v1"
+    execution_steps: 8
+
+  groot_rotate_leg_200k:
+    policy_type: groot
+    mode: none
+    # takada finetune (LeRobot fork wrapper)、200k step。160k もあり。
+    # 全 533ep 分布の 50% を占める dominant skill (rotate_leg 系)。
+    ckpt_ref: Team-RAMEN/IROS2026_RAMEN_takada_rotate_leg_to_tighten_optimal_gr00t_200k@51e306fd19dfbcba81932c6b6f073615fdb54b26
+    device: cuda
+    dtype: bf16
+    replan_family: "groot_relative_eef_v1"  # Phase 4: 同 embodiment
+    execution_steps: 8
+
+  # ---- insert + tighten sequence (LeRobot GR00T、task 8) ---- #
+
+  groot_insert_and_tighten_160k:
+    policy_type: groot
+    mode: none
+    ckpt_ref: Team-RAMEN/IROS2026_RAMEN_takada_insert_and_tighten_optimal_gr00t_160k@23ea1d01677107511d6de2d28a0408e13aaf8fa9
+    device: cuda
+    dtype: bf16
+    replan_family: "groot_relative_eef_v1"
+    execution_steps: 8
+
+  groot_insert_and_tighten_200k:
+    policy_type: groot
+    mode: none
+    ckpt_ref: Team-RAMEN/IROS2026_RAMEN_takada_insert_and_tighten_optimal_gr00t_200k@3988504d73e6cca137c12c1c43b7354bed67128c
+    device: cuda
+    dtype: bf16
+    replan_family: "groot_relative_eef_v1"
+    execution_steps: 8
+
+  # success + optimal curated dataset checkpoints.  Both artifacts were
+  # trained with a native H16 action chunk.  The three slots below change only
+  # how many decoded actions are executed before the async replacement chunk
+  # is promoted; they do not alter the checkpoint's n_action_steps=16 contract.
+  groot_insert_and_tighten_success_140k_steps4:
+    policy_type: groot
+    mode: none
+    ckpt_ref: Team-RAMEN/IROS2026_RAMEN_takada_insert_and_tighten_optimal_success_gr00t_140k@d7ba8012df30f0128e66b191092f049aed1cb8cf
+    device: cuda
+    dtype: bf16
+    replan_family: "groot_relative_eef_v1"
+    execution_steps: 4
+
+  groot_insert_and_tighten_success_140k_steps8:
+    policy_type: groot
+    mode: none
+    ckpt_ref: Team-RAMEN/IROS2026_RAMEN_takada_insert_and_tighten_optimal_success_gr00t_140k@d7ba8012df30f0128e66b191092f049aed1cb8cf
+    device: cuda
+    dtype: bf16
+    replan_family: "groot_relative_eef_v1"
+    execution_steps: 8
+
+  groot_insert_and_tighten_success_140k_steps16:
+    policy_type: groot
+    mode: none
+    ckpt_ref: Team-RAMEN/IROS2026_RAMEN_takada_insert_and_tighten_optimal_success_gr00t_140k@d7ba8012df30f0128e66b191092f049aed1cb8cf
+    device: cuda
+    dtype: bf16
+    replan_family: "groot_relative_eef_v1"
+    execution_steps: 16
+
+  groot_insert_and_tighten_success_200k_steps4:
+    policy_type: groot
+    mode: none
+    ckpt_ref: Team-RAMEN/IROS2026_RAMEN_takada_insert_and_tighten_optimal_success_gr00t_200k@e8b349b1651876a14c554ce289b453f375f24df5
+    device: cuda
+    dtype: bf16
+    replan_family: "groot_relative_eef_v1"
+    execution_steps: 4
+
+  groot_insert_and_tighten_success_200k_steps8:
+    policy_type: groot
+    mode: none
+    ckpt_ref: Team-RAMEN/IROS2026_RAMEN_takada_insert_and_tighten_optimal_success_gr00t_200k@e8b349b1651876a14c554ce289b453f375f24df5
+    device: cuda
+    dtype: bf16
+    replan_family: "groot_relative_eef_v1"
+    execution_steps: 8
+
+  groot_insert_and_tighten_success_200k_steps16:
+    policy_type: groot
+    mode: none
+    ckpt_ref: Team-RAMEN/IROS2026_RAMEN_takada_insert_and_tighten_optimal_success_gr00t_200k@e8b349b1651876a14c554ce289b453f375f24df5
+    device: cuda
+    dtype: bf16
+    replan_family: "groot_relative_eef_v1"
+    execution_steps: 16
+
+  # ---- flip_table (LeRobot GR00T、n17_4 最新) ---- #
+
+  # Legacy near-success v2 baseline, selected immutable step 20k. The HF repo
+  # contains multiple Trainer checkpoints, so load only this nested model.
+  groot_flip_table_n17_2_baseline:
+    policy_type: groot
+    mode: none
+    ckpt_ref: Team-RAMEN/IROS2026_RAMEN_suzuki_flip_table_groot_n17_2_baseline_checkpoints@1a408d87eda8d01f9b79113f1aed97a5d0811bff
+    checkpoint_subdir: checkpoints/020000/pretrained_model
+    device: cuda
+    dtype: bf16
+    replan_family: "groot_relative_eef_v1"
+    temporal_lambda: -0.1
+    execution_steps: 8
+
+  # Isolate the model-input FK convention from the 2026-08-04 near-success
+  # run. The matching wrist-tool offset is applied only by the flip_table
+  # skill's variant profile; checkpoint and action/safety settings stay fixed.
+  groot_flip_table_n17_2_legacy_fk:
+    policy_type: groot
+    mode: none
+    ckpt_ref: Team-RAMEN/IROS2026_RAMEN_suzuki_flip_table_groot_n17_2_baseline_checkpoints@1a408d87eda8d01f9b79113f1aed97a5d0811bff
+    checkpoint_subdir: checkpoints/020000/pretrained_model
+    device: cuda
+    dtype: bf16
+    replan_family: "groot_relative_eef_v1"
+    temporal_lambda: -0.1
+    execution_steps: 8
+
+  # Controlled follow-up to the 2026-09-26 teacher-range observe-only run:
+  # restore the teacher range guard and vary only temporal ensembling.
+  # The near-success legacy runner did not use temporal ensembling; keep the
+  # checkpoint, FK, execution cadence and physical safety limits unchanged.
+  groot_flip_table_n17_2_te_off:
+    policy_type: groot
+    mode: none
+    ckpt_ref: Team-RAMEN/IROS2026_RAMEN_suzuki_flip_table_groot_n17_2_baseline_checkpoints@1a408d87eda8d01f9b79113f1aed97a5d0811bff
+    checkpoint_subdir: checkpoints/020000/pretrained_model
+    device: cuda
+    dtype: bf16
+    replan_family: "groot_relative_eef_v1"
+    temporal_lambda: null
+    execution_steps: 8
+
+  # 2026-09-26 follow-up: isolate the effect of executing ten predicted
+  # steps before replanning. Keep the same checkpoint, no temporal blend,
+  # teacher-range guard, and all robot-side safety limits as the prior run.
+  groot_flip_table_n17_2_te_off_steps10:
+    policy_type: groot
+    mode: none
+    ckpt_ref: Team-RAMEN/IROS2026_RAMEN_suzuki_flip_table_groot_n17_2_baseline_checkpoints@1a408d87eda8d01f9b79113f1aed97a5d0811bff
+    checkpoint_subdir: checkpoints/020000/pretrained_model
+    device: cuda
+    dtype: bf16
+    replan_family: "groot_relative_eef_v1"
+    temporal_lambda: null
+    execution_steps: 10
+
+  # Experimental step100 fine-tune of the v2 baseline.  The local overlay
+  # preserves the pinned HF weights and relocates two training-host paths in
+  # config/processor JSON; it is not a released or validated policy.
+  groot_flip_table_kori_step100:
+    policy_type: groot
+    mode: none
+    ckpt_ref: .checkpoints/pana_kori_flip_table_step100_770fc5ed/pretrained_model
+    device: cuda
+    dtype: bf16
+    replan_family: "groot_relative_eef_v1"
+    temporal_lambda: -0.1
+    execution_steps: 8
+
+  groot_flip_table_n17_4:
+    policy_type: groot
+    mode: none
+    # suzuki finetune (LeRobot fork wrapper)、n17_4 iteration 最新。
+    # 他 candidate: _n17_2_baseline_checkpoints / _n17_insertion_candidate。
+    # 組立最終工程 (table flip)、全 533ep 分布 5%。
+    ckpt_ref: Team-RAMEN/IROS2026_RAMEN_suzuki_flip_table_groot_n17_4@737ce9179ee2bba8594687a8603f9b8ab1b33281
+    device: cuda
+    dtype: bf16
+    replan_family: "groot_relative_eef_v1"  # Phase 4: 同 embodiment
+    execution_steps: 8
+
+  # Focused M3-M4 insertion expert.  It was warm-started from the legacy
+  # near-success 20k flip-table policy, but its final 2k updates use only the
+  # left-support -> right-insertion windows.  Keep the normal flip_table skill
+  # identity/initial pose for controlled retention tests; deployment remains
+  # arm+Dex1 only and executes four H40 steps before replanning.
+  groot_flip_table_insertion_candidate:
+    policy_type: groot
+    mode: none
+    ckpt_ref: Team-RAMEN/IROS2026_RAMEN_suzuki_flip_table_groot_n17_insertion_candidate@13b0295b1a4b618d504ed8245a00fa31e63f5ab5
+    device: cuda
+    dtype: bf16
+    replan_family: "groot_relative_eef_v1"
+    # The sealed candidate was evaluated/trained as a four-step specialist
+    # without cross-chunk temporal blending.  The generic GR00T default (-0.1)
+    # is intentionally not inherited here because blending relative-action
+    # chunks would change the candidate's unvalidated execution contract.
+    temporal_lambda: null
+    execution_steps: 4
+
+  # ---- pick_table_leg (Isaac-GR00T native raw、full-body embodiment、別 schema) ---- #
+
+  groot_pick_legs_v1:
+    policy_type: groot_pick_legs
+    mode: none
+    # Isaac-GR00T native raw finetune (Team-RAMEN 内別担当者 upload、命名 pattern
+    # 違い、subdir load 必要)。実 ckpt は checkpoint-40000/ 下、config.json は
+    # base_model=GR00T-N1.7-3B、embodiment=NEW_EMBODIMENT (raw robot_q 38D)。
+    # checkpoint_subdir=null は root load (ver2-lora) を意味するので、subdir 配置の
+    # ver1 は明示指定する (未指定=root の規約は generic groot 経路と共通)。
+    ckpt_ref: Team-RAMEN/groot-n1.7-pick-legs-ver1@b63d9c49482cfc8998d1a3a0e3e0ac3ceb1d620a
+    checkpoint_subdir: checkpoint-40000
+    device: cuda
+    dtype: bf16
+
+  # pick_table_leg ver2-lora (LeRobot/root layout、明日の運営評価 deploy 用)。
+  # ver1 と同じ new_embodiment 38D raw だが、Isaac Trainer subdir ではなく
+  # LeRobot GR00T 形式で root 直下に merged safetensors + processor/statistics/
+  # embodiment_id を配置。lora_adapter/ は再現 artifact (load 経路は使わない)。
+  # → checkpoint_subdir 未指定 (null) = root load。action 処理は groot_pick_legs
+  # のまま (38D new_embodiment、worker contract は ...ver2-lora を既定 pin 済)。
+  groot_pick_legs_v2:
+    policy_type: groot_pick_legs
+    mode: none
+    ckpt_ref: Team-RAMEN/groot-n1.7-pick-legs-ver2-lora@8f875028fffb1b35ebaf6a95d1575ccec86c12a1
+    device: cuda
+    dtype: bf16
+
+  # Distinct 56-D state / relative-EEF 20-D action model. Never route through
+  # the 38-D absolute-joint pick adapter.
+  groot_pick_legs_ee_rel:
+    policy_type: groot_pick_legs_ee_rel
+    mode: none
+    ckpt_ref: Team-RAMEN/groot-n1.7-pick-legs-ee-rel-lora@ba3a20f30f5d0388c6656390e1b88228c06aa332
+    device: cuda
+    dtype: bf16
+
+  # ---- RAMEN-Ori task5+7 default (Phase 1.11 arm-only safety profile 用) ---- #
+  #
+  # Phase 2 5-run bench (default / g3 / meanflow / awr / radio) のうち、default 以外
+  # の 4 architecture variant + null ckpt 予約 slot 2 個 (token / overlay) は
+  # Issue #132 Phase D (2026-09-04) で削除。理由:
+  # - Phase K R-6 bench (Phase C 追加 slot `rotate_table_base_ramen_ori`) で
+  #   overlay + rel + β = val_ema ee_error 28.19mm (Phase 2 baseline ~48mm から
+  #   40% 改善) が確定 = 実機評価の主力は Phase K Run 5 winner に集約
+  # - Phase 2 5 variant は wandb val_ema loss で比較しただけ、実 inference は
+  #   誰も回してない (memory `project_ramen_ori_5runs_completed`)
+  # - null ckpt 予約 (token / overlay) の C-2/C-11 学習は未定 = 予約解除
+  #
+  # `ramen_ori_default` のみ保持: entrypoint.py の
+  # `PHASE1_11_POLICY_VARIANT = "ramen_ori_default"` (arm-only safety profile の
+  # 必須依存) + `smoke_policy_forward.py` の --variant 例で使用中のため。
+  #
+  # 2026-10-08 (Issue #190): model (`IROS2026_RAMEN_hara_task_5_7_ramen_ori_default_100k_v1`) は HF から消した。
+  # overlay なしの設定の例と、Phase 1.11 の安全確認の経路が求める名前として設定だけ残す (使うには学び直す)。
+
+  ramen_ori_default:
+    policy_type: ramen_ori
+    mode: none
+    ckpt_ref: Team-RAMEN/IROS2026_RAMEN_hara_task_5_7_ramen_ori_default_100k_v1@fbef6ab022a95aa089edac8916dafcd6e76f1f69
+    device: cuda
+    dtype: fp32   # base.yaml:vision_backbone.dtype=fp32
+
+  # ---- RAMEN-Ori の slot の共通の決まり (Issue #141 から) ---- #
+  #   - model は `ckpt["cfg"]` から組み立てる (`hydra_overrides` は使わない、P8-1)
+  #   - `skill_id` を slot で明示する (1 つの ckpt を複数の skill で学習している、P8-3)
+  #   - `dtype` は fp32 固定 (bf16 にすると正規化の統計の buffer まで落ちる、P8-7)
+  #   - overlay は #139 の統合 cache で焼いたので色差は 4:4:4
+  #   - 起動時に ckpt の約束と照合する (skill_id / YOLO の重み / conf・太さ / カメラ / state の形)
+  # 2026-10-09 (Issue #190): #141 の再学習 (rotate・move・insert の 3 skill) の slot は、最後に残した
+  # state_dropout (rotate と insert の 2 slot) も model を消したので外した。
+
+  # ---- RAMEN-Ori 6 skill 統合学習 (Issue #155) の実機評価 slot ---- #
+  # 1 つの ckpt (c32 + state group dropout を unified_all6 で 600k まで) の途中 3 点 × 6 skill。
+  # repo には 10k ごとの ckpt が並ぶので ckpt_filename で step を選ぶ (無いと最大 step = 600k を読む)。
+  # 150k = flip / move が最良、300k = 6 skill のバランスが最良圏、400k = insert が頭打ちに達した最初の点
+  # (推論と同じ 6 step 生成の val 評価、model/ramen_ori/scripts/eval_ckpt_val.py)。
+  # 16D の ckpt (腰を出さない)。dispatch_waist: true の skill では policy が outputs_waist: False と申告して
+  # VlaSkill が腰を捨てる (Issue #144)。手順は docs/handoff/realmachine_all6_ckpt_eval.md
+  insert_table_leg_ramen_ori_all6_150k:
+    policy_type: ramen_ori
+    mode: overlay
+    overlay_jpeg_subsampling: "4:4:4"   # Issue #139 の統合 cache で焼いた overlay
+    ckpt_ref: Team-RAMEN/ramen-g1-ikea-assembly-ramen-ori-all-skills@17b5658e33f98e264a6e05481fc9d069e9fde546
+    ckpt_filename: ckpt_step_150000.pt
+    device: cuda
+    dtype: fp32
+    action_space: abs
+    skill_id: 0                          # insert_table_leg (skill_mapping.py)
+    replan_family: ramen_ori_flow_v1
+    execution_steps: 8                   # chunk 32 に対する重なり
+    temporal_lambda: -0.1
+    rtc:
+      enabled: false
+    cams: [head_left, wrist_left, wrist_right]
+
+  flip_table_ramen_ori_all6_150k:
+    policy_type: ramen_ori
+    mode: overlay
+    overlay_jpeg_subsampling: "4:4:4"   # Issue #139 の統合 cache で焼いた overlay
+    ckpt_ref: Team-RAMEN/ramen-g1-ikea-assembly-ramen-ori-all-skills@17b5658e33f98e264a6e05481fc9d069e9fde546
+    ckpt_filename: ckpt_step_150000.pt
+    device: cuda
+    dtype: fp32
+    action_space: abs
+    skill_id: 1                          # flip_table (skill_mapping.py)
+    replan_family: ramen_ori_flow_v1
+    execution_steps: 8                   # chunk 32 に対する重なり
+    temporal_lambda: -0.1
+    rtc:
+      enabled: false
+    cams: [head_left, wrist_left, wrist_right]
+
+  rotate_leg_to_tighten_ramen_ori_all6_150k:
+    policy_type: ramen_ori
+    mode: overlay
+    overlay_jpeg_subsampling: "4:4:4"   # Issue #139 の統合 cache で焼いた overlay
+    ckpt_ref: Team-RAMEN/ramen-g1-ikea-assembly-ramen-ori-all-skills@17b5658e33f98e264a6e05481fc9d069e9fde546
+    ckpt_filename: ckpt_step_150000.pt
+    device: cuda
+    dtype: fp32
+    action_space: abs
+    skill_id: 2                          # rotate_leg_to_tighten (skill_mapping.py)
+    replan_family: ramen_ori_flow_v1
+    execution_steps: 8                   # chunk 32 に対する重なり
+    temporal_lambda: -0.1
+    rtc:
+      enabled: false
+    cams: [head_left, wrist_left, wrist_right]
+
+  pick_table_leg_ramen_ori_all6_150k:
+    policy_type: ramen_ori
+    mode: overlay
+    overlay_jpeg_subsampling: "4:4:4"   # Issue #139 の統合 cache で焼いた overlay
+    ckpt_ref: Team-RAMEN/ramen-g1-ikea-assembly-ramen-ori-all-skills@17b5658e33f98e264a6e05481fc9d069e9fde546
+    ckpt_filename: ckpt_step_150000.pt
+    device: cuda
+    dtype: fp32
+    action_space: abs
+    skill_id: 3                          # pick_table_leg (skill_mapping.py)
+    replan_family: ramen_ori_flow_v1
+    execution_steps: 8                   # chunk 32 に対する重なり
+    temporal_lambda: -0.1
+    rtc:
+      enabled: false
+    cams: [head_left, wrist_left, wrist_right]
+
+  rotate_table_base_ramen_ori_all6_150k:
+    policy_type: ramen_ori
+    mode: overlay
+    overlay_jpeg_subsampling: "4:4:4"   # Issue #139 の統合 cache で焼いた overlay
+    ckpt_ref: Team-RAMEN/ramen-g1-ikea-assembly-ramen-ori-all-skills@17b5658e33f98e264a6e05481fc9d069e9fde546
+    ckpt_filename: ckpt_step_150000.pt
+    device: cuda
+    dtype: fp32
+    action_space: abs
+    skill_id: 4                          # rotate_table_base (skill_mapping.py)
+    replan_family: ramen_ori_flow_v1
+    execution_steps: 8                   # chunk 32 に対する重なり
+    temporal_lambda: -0.1
+    rtc:
+      enabled: false
+    cams: [head_left, wrist_left, wrist_right]
+
+  move_table_base_ramen_ori_all6_150k:
+    policy_type: ramen_ori
+    mode: overlay
+    overlay_jpeg_subsampling: "4:4:4"   # Issue #139 の統合 cache で焼いた overlay
+    ckpt_ref: Team-RAMEN/ramen-g1-ikea-assembly-ramen-ori-all-skills@17b5658e33f98e264a6e05481fc9d069e9fde546
+    ckpt_filename: ckpt_step_150000.pt
+    device: cuda
+    dtype: fp32
+    action_space: abs
+    skill_id: 5                          # move_table_base (skill_mapping.py)
+    replan_family: ramen_ori_flow_v1
+    execution_steps: 8                   # chunk 32 に対する重なり
+    temporal_lambda: -0.1
+    rtc:
+      enabled: false
+    cams: [head_left, wrist_left, wrist_right]
+
+  insert_table_leg_ramen_ori_all6_300k:
+    policy_type: ramen_ori
+    mode: overlay
+    overlay_jpeg_subsampling: "4:4:4"   # Issue #139 の統合 cache で焼いた overlay
+    ckpt_ref: Team-RAMEN/ramen-g1-ikea-assembly-ramen-ori-all-skills@17b5658e33f98e264a6e05481fc9d069e9fde546
+    ckpt_filename: ckpt_step_300000.pt
+    device: cuda
+    dtype: fp32
+    action_space: abs
+    skill_id: 0                          # insert_table_leg (skill_mapping.py)
+    replan_family: ramen_ori_flow_v1
+    execution_steps: 8                   # chunk 32 に対する重なり
+    temporal_lambda: -0.1
+    rtc:
+      enabled: false
+    cams: [head_left, wrist_left, wrist_right]
+
+  flip_table_ramen_ori_all6_300k:
+    policy_type: ramen_ori
+    mode: overlay
+    overlay_jpeg_subsampling: "4:4:4"   # Issue #139 の統合 cache で焼いた overlay
+    ckpt_ref: Team-RAMEN/ramen-g1-ikea-assembly-ramen-ori-all-skills@17b5658e33f98e264a6e05481fc9d069e9fde546
+    ckpt_filename: ckpt_step_300000.pt
+    device: cuda
+    dtype: fp32
+    action_space: abs
+    skill_id: 1                          # flip_table (skill_mapping.py)
+    replan_family: ramen_ori_flow_v1
+    execution_steps: 8                   # chunk 32 に対する重なり
+    temporal_lambda: -0.1
+    rtc:
+      enabled: false
+    cams: [head_left, wrist_left, wrist_right]
+
+  rotate_leg_to_tighten_ramen_ori_all6_300k:
+    policy_type: ramen_ori
+    mode: overlay
+    overlay_jpeg_subsampling: "4:4:4"   # Issue #139 の統合 cache で焼いた overlay
+    ckpt_ref: Team-RAMEN/ramen-g1-ikea-assembly-ramen-ori-all-skills@17b5658e33f98e264a6e05481fc9d069e9fde546
+    ckpt_filename: ckpt_step_300000.pt
+    device: cuda
+    dtype: fp32
+    action_space: abs
+    skill_id: 2                          # rotate_leg_to_tighten (skill_mapping.py)
+    replan_family: ramen_ori_flow_v1
+    execution_steps: 8                   # chunk 32 に対する重なり
+    temporal_lambda: -0.1
+    rtc:
+      enabled: false
+    cams: [head_left, wrist_left, wrist_right]
+
+  pick_table_leg_ramen_ori_all6_300k:
+    policy_type: ramen_ori
+    mode: overlay
+    overlay_jpeg_subsampling: "4:4:4"   # Issue #139 の統合 cache で焼いた overlay
+    ckpt_ref: Team-RAMEN/ramen-g1-ikea-assembly-ramen-ori-all-skills@17b5658e33f98e264a6e05481fc9d069e9fde546
+    ckpt_filename: ckpt_step_300000.pt
+    device: cuda
+    dtype: fp32
+    action_space: abs
+    skill_id: 3                          # pick_table_leg (skill_mapping.py)
+    replan_family: ramen_ori_flow_v1
+    execution_steps: 8                   # chunk 32 に対する重なり
+    temporal_lambda: -0.1
+    rtc:
+      enabled: false
+    cams: [head_left, wrist_left, wrist_right]
+
+  rotate_table_base_ramen_ori_all6_300k:
+    policy_type: ramen_ori
+    mode: overlay
+    overlay_jpeg_subsampling: "4:4:4"   # Issue #139 の統合 cache で焼いた overlay
+    ckpt_ref: Team-RAMEN/ramen-g1-ikea-assembly-ramen-ori-all-skills@17b5658e33f98e264a6e05481fc9d069e9fde546
+    ckpt_filename: ckpt_step_300000.pt
+    device: cuda
+    dtype: fp32
+    action_space: abs
+    skill_id: 4                          # rotate_table_base (skill_mapping.py)
+    replan_family: ramen_ori_flow_v1
+    execution_steps: 8                   # chunk 32 に対する重なり
+    temporal_lambda: -0.1
+    rtc:
+      enabled: false
+    cams: [head_left, wrist_left, wrist_right]
+
+  move_table_base_ramen_ori_all6_300k:
+    policy_type: ramen_ori
+    mode: overlay
+    overlay_jpeg_subsampling: "4:4:4"   # Issue #139 の統合 cache で焼いた overlay
+    ckpt_ref: Team-RAMEN/ramen-g1-ikea-assembly-ramen-ori-all-skills@17b5658e33f98e264a6e05481fc9d069e9fde546
+    ckpt_filename: ckpt_step_300000.pt
+    device: cuda
+    dtype: fp32
+    action_space: abs
+    skill_id: 5                          # move_table_base (skill_mapping.py)
+    replan_family: ramen_ori_flow_v1
+    execution_steps: 8                   # chunk 32 に対する重なり
+    temporal_lambda: -0.1
+    rtc:
+      enabled: false
+    cams: [head_left, wrist_left, wrist_right]
+
+  insert_table_leg_ramen_ori_all6_400k:
+    policy_type: ramen_ori
+    mode: overlay
+    overlay_jpeg_subsampling: "4:4:4"   # Issue #139 の統合 cache で焼いた overlay
+    ckpt_ref: Team-RAMEN/ramen-g1-ikea-assembly-ramen-ori-all-skills@17b5658e33f98e264a6e05481fc9d069e9fde546
+    ckpt_filename: ckpt_step_400000.pt
+    device: cuda
+    dtype: fp32
+    action_space: abs
+    skill_id: 0                          # insert_table_leg (skill_mapping.py)
+    replan_family: ramen_ori_flow_v1
+    execution_steps: 8                   # chunk 32 に対する重なり
+    temporal_lambda: -0.1
+    rtc:
+      enabled: false
+    cams: [head_left, wrist_left, wrist_right]
+
+  flip_table_ramen_ori_all6_400k:
+    policy_type: ramen_ori
+    mode: overlay
+    overlay_jpeg_subsampling: "4:4:4"   # Issue #139 の統合 cache で焼いた overlay
+    ckpt_ref: Team-RAMEN/ramen-g1-ikea-assembly-ramen-ori-all-skills@17b5658e33f98e264a6e05481fc9d069e9fde546
+    ckpt_filename: ckpt_step_400000.pt
+    device: cuda
+    dtype: fp32
+    action_space: abs
+    skill_id: 1                          # flip_table (skill_mapping.py)
+    replan_family: ramen_ori_flow_v1
+    execution_steps: 8                   # chunk 32 に対する重なり
+    temporal_lambda: -0.1
+    rtc:
+      enabled: false
+    cams: [head_left, wrist_left, wrist_right]
+
+  rotate_leg_to_tighten_ramen_ori_all6_400k:
+    policy_type: ramen_ori
+    mode: overlay
+    overlay_jpeg_subsampling: "4:4:4"   # Issue #139 の統合 cache で焼いた overlay
+    ckpt_ref: Team-RAMEN/ramen-g1-ikea-assembly-ramen-ori-all-skills@17b5658e33f98e264a6e05481fc9d069e9fde546
+    ckpt_filename: ckpt_step_400000.pt
+    device: cuda
+    dtype: fp32
+    action_space: abs
+    skill_id: 2                          # rotate_leg_to_tighten (skill_mapping.py)
+    replan_family: ramen_ori_flow_v1
+    execution_steps: 8                   # chunk 32 に対する重なり
+    temporal_lambda: -0.1
+    rtc:
+      enabled: false
+    cams: [head_left, wrist_left, wrist_right]
+
+  pick_table_leg_ramen_ori_all6_400k:
+    policy_type: ramen_ori
+    mode: overlay
+    overlay_jpeg_subsampling: "4:4:4"   # Issue #139 の統合 cache で焼いた overlay
+    ckpt_ref: Team-RAMEN/ramen-g1-ikea-assembly-ramen-ori-all-skills@17b5658e33f98e264a6e05481fc9d069e9fde546
+    ckpt_filename: ckpt_step_400000.pt
+    device: cuda
+    dtype: fp32
+    action_space: abs
+    skill_id: 3                          # pick_table_leg (skill_mapping.py)
+    replan_family: ramen_ori_flow_v1
+    execution_steps: 8                   # chunk 32 に対する重なり
+    temporal_lambda: -0.1
+    rtc:
+      enabled: false
+    cams: [head_left, wrist_left, wrist_right]
+
+  rotate_table_base_ramen_ori_all6_400k:
+    policy_type: ramen_ori
+    mode: overlay
+    overlay_jpeg_subsampling: "4:4:4"   # Issue #139 の統合 cache で焼いた overlay
+    ckpt_ref: Team-RAMEN/ramen-g1-ikea-assembly-ramen-ori-all-skills@17b5658e33f98e264a6e05481fc9d069e9fde546
+    ckpt_filename: ckpt_step_400000.pt
+    device: cuda
+    dtype: fp32
+    action_space: abs
+    skill_id: 4                          # rotate_table_base (skill_mapping.py)
+    replan_family: ramen_ori_flow_v1
+    execution_steps: 8                   # chunk 32 に対する重なり
+    temporal_lambda: -0.1
+    rtc:
+      enabled: false
+    cams: [head_left, wrist_left, wrist_right]
+
+  move_table_base_ramen_ori_all6_400k:
+    policy_type: ramen_ori
+    mode: overlay
+    overlay_jpeg_subsampling: "4:4:4"   # Issue #139 の統合 cache で焼いた overlay
+    ckpt_ref: Team-RAMEN/ramen-g1-ikea-assembly-ramen-ori-all-skills@17b5658e33f98e264a6e05481fc9d069e9fde546
+    ckpt_filename: ckpt_step_400000.pt
+    device: cuda
+    dtype: fp32
+    action_space: abs
+    skill_id: 5                          # move_table_base (skill_mapping.py)
+    replan_family: ramen_ori_flow_v1
+    execution_steps: 8                   # chunk 32 に対する重なり
+    temporal_lambda: -0.1
+    rtc:
+      enabled: false
+    cams: [head_left, wrist_left, wrist_right]
+
+  # ---- 会場の腕に慣れさせた追加学習 (Issue #188) の slot ---- #
+  # all6 の重み (rotate・pick は 300k、flip は 150k、insert は 400k) から 1 skill ずつ 2 万 step 追加学習した 20k
+  # (推論と同じ生成の評価で 4 本とも 20k が最良。docs/handoff/issue_188_venue_arm_training.md、W&B venue_arm_eval_20260930)。
+  # 2026-10-09 (Issue #190): flip の 20k は model を消した (本番の flip は下の学び直しの a_n15)。
+  # 学習の手先の入力は推論と同じ FK (skill ごとの wrist_tool_offset も同じ) → skills.<skill>.wrist_tool_offset を変えないこと。
+  # 学習の半分で、今と 1 frame 前の腕を会場の模擬の遅い腕に置き換えている (model/ramen_ori/venue_arm.py)。
+  # 以前の flip の追加学習 (flip_ft_fk / flip_ft_fk_progress、Issue #183) は FK に渡す関節の位置がずれていたので slot を消した。
+  # pick の slot は 2 通りに使える: hybrid の区間 1 (掴むまで) に `--policy-variant-pick pick_table_leg_ramen_ori_venue_all6_20k`
+  # (VLM・IK MP・持ち替えは hybrid のまま。pick_leg_hybrid.HYBRID_PHASE1_VARIANTS)、hybrid を切って全部を任せるなら
+  # さらに `--no-pick-leg-hybrid`。variant_sets の venue_arm には入れない (会場で使うなら重みは USB の V2 から入れる)。
+  rotate_table_base_ramen_ori_venue_all6_20k:
+    policy_type: ramen_ori
+    mode: overlay
+    overlay_jpeg_subsampling: "4:4:4"   # Issue #139 の統合 cache で焼いた overlay
+    ckpt_ref: Team-RAMEN/ramen-g1-ikea-assembly-ramen-ori-rotate-table-base@aaa73be26e795376ca9e2fcf2528e0b51b362c67
+    ckpt_filename: ckpt_step_020000.pt   # 固定 (会場はネット無し = HF API を呼ばない。#159 B3d-03)
+    device: cuda
+    dtype: fp32
+    action_space: abs
+    skill_id: 4                          # rotate_table_base (skill_mapping.py)
+    replan_family: ramen_ori_flow_v1
+    execution_steps: 8                   # chunk 32 に対する重なり
+    temporal_lambda: -0.1
+    rtc:
+      enabled: false
+    cams: [head_left, wrist_left, wrist_right]
+
+  pick_table_leg_ramen_ori_venue_all6_20k:
+    policy_type: ramen_ori
+    mode: overlay
+    overlay_jpeg_subsampling: "4:4:4"   # Issue #139 の統合 cache で焼いた overlay
+    ckpt_ref: Team-RAMEN/ramen-g1-ikea-assembly-ramen-ori-pick-table-leg@5384b7ed641af16edf10f6b1ecf67713146996af
+    ckpt_filename: ckpt_step_020000.pt   # 固定 (会場はネット無し = HF API を呼ばない。#159 B3d-03)
+    device: cuda
+    dtype: fp32
+    action_space: abs
+    skill_id: 3                          # pick_table_leg (skill_mapping.py)
+    replan_family: ramen_ori_flow_v1
+    execution_steps: 8                   # chunk 32 に対する重なり
+    temporal_lambda: -0.1
+    rtc:
+      enabled: false
+    cams: [head_left, wrist_left, wrist_right]
+
+  insert_table_leg_ramen_ori_venue_all6_20k:
+    policy_type: ramen_ori
+    mode: overlay
+    overlay_jpeg_subsampling: "4:4:4"   # Issue #139 の統合 cache で焼いた overlay
+    ckpt_ref: Team-RAMEN/ramen-g1-ikea-assembly-ramen-ori-insert-table-leg@427d42dd29c0f8a8ff81a3c2319ab7710cdb1f8c
+    ckpt_filename: ckpt_step_020000.pt   # 固定 (会場はネット無し = HF API を呼ばない。#159 B3d-03)
+    device: cuda
+    dtype: fp32
+    action_space: abs
+    skill_id: 0                          # insert_table_leg (skill_mapping.py)
+    replan_family: ramen_ori_flow_v1
+    execution_steps: 8                   # chunk 32 に対する重なり
+    temporal_lambda: -0.1
+    rtc:
+      enabled: false
+    cams: [head_left, wrist_left, wrist_right]
+
+  # ---- flip の学び直し (Issue #188、2026-09-30) の slot ---- #
+  # venue_flip_all6 20k は実機で左腕だけで傾けて右腕が持ち上げに入らず、台が戻るのを繰り返した。教師の手順の揃った
+  # 区間だけ (data.episode_select) で、学習の腕の状態を教師からずらし (data.state_noise、正解の指令は教師のまま)、
+  # all6 150k から 2 万 step 追加学習した 20k。それ以外 (手先は FK・会場の腕の置き換え) は venue_flip_all6 と同じ
+  # (docs/handoff/issue_188_venue_arm_training.md §10)。skills.flip_table.wrist_tool_offset を変えないこと。
+  # 2026-10-08 (Issue #190): 3 本のうち本番用に選んだ a_n15 だけ残す (a_n30・c_n15 は model を消した)。
+  flip_table_ramen_ori_flip_sel_a_n15_20k:
+    # A: 左が先に最高点・右肩 pitch < -0.8 の 301 区間 + 腕の状態のずらし σ0.15 (上限 0.4 rad)
+    policy_type: ramen_ori
+    mode: overlay
+    overlay_jpeg_subsampling: "4:4:4"   # Issue #139 の統合 cache で焼いた overlay
+    ckpt_ref: Team-RAMEN/ramen-g1-ikea-assembly-ramen-ori-flip-table@072c3757b781cfd547eefaead8e2c55de705d25b
+    ckpt_filename: ckpt_step_020000.pt   # 固定 (会場はネット無し = HF API を呼ばない。#159 B3d-03)
+    device: cuda
+    dtype: fp32
+    action_space: abs
+    skill_id: 1                          # flip_table (skill_mapping.py)
+    replan_family: ramen_ori_flow_v1
+    execution_steps: 8                   # chunk 32 に対する重なり
+    temporal_lambda: -0.1
+    rtc:
+      enabled: false
+    cams: [head_left, wrist_left, wrist_right]
+
+  # ---- insert_table_leg Diffusion Policy (optimal / raw PNG / 100k) ---- #
+  # 本番既定。ramen_ori / all6_400k の明示セットは各自の insert slot を維持する。
+  # 学習は raw 3cam / 19D absolute targets / FP32。PNG は学習時の I/O cache で、
+  # 実機画像に OBB / JPEG 再圧縮 / GR00T hand synergy 変換を加えない。
+  # 詳細・切替手順: docs/inference/insert_table_leg_diffusion_optimal_100k.md
+  insert_table_leg_diffusion_optimal_100k:
+    policy_type: act_diffusion
+    mode: none
+    ckpt_ref: Team-RAMEN/IROS2026_RAMEN_takada_insert_leg_optimal_diffusion@6c9911b8185ea185e6c929fbe9ede7d586c1bf09
+    device: cuda
+    dtype: fp32
+    action_space: abs
+    cams: [head_left, wrist_left, wrist_right]
+    replan_family: diffusion
+    execution_steps: 8
+    temporal_lambda: null
+    rtc:
+      enabled: false
+
+# ---- shared config (Skill wrapper が参照) ---- #
+
+yolo:
+  # v11b Cycle 2 (2026-08-19 upload、Issue #122 D-3 決定値)。overlay / precomputed_token
+  # mode 両方で共通に使う。SHA pin で再現性確保 (別 SHA を使いたい時は overridekab)。
+  ckpt_ref: Team-RAMEN/ramen-g1-ikea-assembly-yolo-obb@8221d0aef45d63666537c1f030810fb9b56dd1ed
+  # repo の中の重みの path (決め打ち)。これで HF cache の path が 1 つに決まり、revision が commit
+  # hash なので cache にあれば通信せずに読める (会場は実行時オフライン。B7-01)。
+  ckpt_file: runs/m_lowaug_v11b/weights/best_20260818.pt
+  # 推論の入力解像度。学習 cache の焼き込み (unified_frame_cache.yaml: yolo.imgsz) と同じ値を
+  # 明示する (Issue #141 INF-10)。重みに保存された値と同じだが、書いておかないと ultralytics の
+  # 既定 (640) に落ちたときに気付けない。
+  imgsz: 800
+  # confidence の下限。焼き込みは 0.15 だが、policy に渡す検出は cleanup.yaml の policy.conf_min
+  # (0.30、学習の overlay と同じ) で切るので、0.30 未満の枠は policy には届かない。ここを 0.15 に
+  # 下げると上位 Planner (conf の下限を持たない) に入る材料だけが変わるので、現状の 0.25 を保つ。
+  conf: 0.25
+
+# skill_name → policy_variant + skill_id/language mapping (Phase 9 で追加予定)
+# 例:
+#   skills:
+#     move_table_base:
+#       variant: ramen_ori_default
+#       skill_id: 5
+#       language: "rotate and move table base (combined 5+7)"  # GR00T 用 (variant swap 時)

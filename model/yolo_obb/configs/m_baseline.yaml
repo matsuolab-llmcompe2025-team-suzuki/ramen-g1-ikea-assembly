@@ -1,0 +1,11 @@
+model: m
+epochs: 100
+batch: 4
+imgsz: 640
+freeze: 0
+patience: 20
+optimizer: auto
+mosaic: 1.0
+mixup: 0.0
+run_name: m_baseline
+seed: 42

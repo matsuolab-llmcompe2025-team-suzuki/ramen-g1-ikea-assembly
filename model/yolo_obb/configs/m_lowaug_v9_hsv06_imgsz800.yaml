@@ -1,0 +1,24 @@
+# Issue #108 v9_hsv06_imgsz800: v8_bg + hsv_v 0.6 (光条件 augment 強化 中間)
+# base: v8_bg (mAP50/recall top) + hsv_v 0.4 (default) -> 0.6
+# 目的: user 観察「workspace が画面全体化 + video 白っぽい」への対策として明度 vary 強化
+# hsv_v pilot で 0.6 が sweet spot (object recognizable 保持) と判定。
+model: m
+epochs: 100
+batch: 4
+imgsz: 800
+freeze: 0
+patience: 20
+optimizer: auto
+mosaic: 0.5
+mixup: 0.0
+run_name: m_lowaug_v9_hsv06_imgsz800
+seed: 42
+data: data/yolo_obb/configs/dataset_v8_bg.yaml
+workers: 2
+scale: 0.6
+translate: 0.2
+degrees: 10.0
+perspective: 0.001
+fliplr: 0.0        # default 0.5 → 0.0 (hand_right/left 学習破壊 回避、v8_bg_clean 継承)
+erasing: 0.0       # default 0.4 → 0.0 (object 消失 回避、v8_bg_clean 継承)
+hsv_v: 0.6         # default 0.4 → 0.6 (光条件 augment 強化、object 保持 sweet spot)

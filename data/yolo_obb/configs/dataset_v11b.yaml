@@ -1,0 +1,23 @@
+# YOLO OBB dataset config (v11b: Cycle 2 = v10 + head_left cycle1 100 + cycle2 623)
+# base: dataset_v11a に `head_left/cycle2/images` (623 frame、user 修正 195 + v11a pseudo 428) 追加。
+# 目的: head_left mp4 (新環境) を frame 密にカバー、Cycle 1 の boot 効果 + Cycle 2 のフル active learning。
+# val は v10 と同じ (dataset/images/val 10 枚) → v10_hsv07 / v11a との mAP 直接比較可。
+path: /home/ubuntu/work_dir/iros/iros_2026_ramen/data/yolo_obb
+train:
+  - dataset/images/train
+  - augmentation/synthetic/v5_material_random/images
+  - augmentation/synthetic/v8_zoomout_random/images
+  - augmentation/synthetic/v4_flat/images
+  - head_left/cycle1/images
+  - head_left/cycle2/images
+val: dataset/images/val
+
+nc: 7
+names:
+  0: workspace
+  1: leg
+  2: leg_tip
+  3: hole
+  4: table_top
+  5: hand_right
+  6: hand_left

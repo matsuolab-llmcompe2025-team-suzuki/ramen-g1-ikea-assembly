@@ -1,0 +1,25 @@
+# Issue #108 v10_hsv07_imgsz800: annotation 拡張後 dataset + v9 pilot 中間値 hsv_v=0.7
+# base: v8_bg_clean (fliplr=0/erasing=0 継承) + hsv_v=0.7 (v9_hsv06 0.6 と v9_hsv08 0.8 の中間、
+# user 指示 sweet spot) + 新 dataset (10 ep = 966 file、annotation batch v9+v10 反映)。
+#
+# 検証目的: annotation 拡張 (v3 baseline 400 → v10 966 image、+141%) と光条件 augment 中間値の複合効果。
+model: m
+epochs: 100
+batch: 4
+imgsz: 800
+freeze: 0
+patience: 20
+optimizer: auto
+mosaic: 0.5
+mixup: 0.0
+run_name: m_lowaug_v10_hsv07_imgsz800
+seed: 42
+data: data/yolo_obb/configs/dataset_v10.yaml
+workers: 2
+scale: 0.6
+translate: 0.2
+degrees: 10.0
+perspective: 0.001
+fliplr: 0.0          # hand_right/left 学習破壊 回避
+erasing: 0.0         # object 消失 回避
+hsv_v: 0.7           # user 指示 中間値 (v9_hsv06 0.6 と v9_hsv08 0.8 の間、sweet spot)

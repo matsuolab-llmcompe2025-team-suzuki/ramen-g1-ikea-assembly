@@ -1,0 +1,154 @@
+# Issue #139: GR00T / ACT / DP / RAMEN-Ori 共通の overlay frame cache を作り直す設定。
+# run_unified_cache_pipeline.py が読み、焼き込み (precompute_augmented_frame_cache_ramen_ori.py) にも
+# このファイルをそのまま --aug-config-yaml として渡す (augmentation section)。
+#
+# 作るもの (skill ごと、HF repo の同じ path に上書き):
+#   obb_yolo/<hash>/               YOLO-OBB 全件 (head_left = cam_0 のみ)
+#   frame_cache_tars/              v0 (デコードのみ) の jpg。次回の焼き直し元
+#   frame_cache_v2_tars/overlay/   head_left の aug + overlay
+#   frame_cache_v2_tars/token/     head_left の aug のみ (回転・平行移動なし)
+#   frame_cache_v2_tars/common/    wrist の aug (overlay / token で同一なので 1 本)
+# v2 の 3 種は skill の kinds で選ぶ (未指定は 3 種とも、Issue #146)。
+#
+# 実行は --skills で対象を絞る。Issue #139 の 3 skill (rotate / move / insert) は作成済みなので、
+# Issue #146 の 3 skill だけ流すときは --skills pick_table_leg,flip_table,rotate_leg_to_tighten
+
+work_root: /nvme/unified_cache
+
+# pixi env (repo root 相対)。YOLO だけ ultralytics の入った env、それ以外は ACT / DP 学習と同じ env
+envs:
+  yolo: model/yolo_obb/pixi.toml
+  main: model/subtask_policy_training/pixi.toml
+
+cameras:
+  head: observation.images.cam_0          # OBB を描く cam (head_left)
+  wrist:                                  # overlay を描かない cam (token と overlay で共通)
+    - observation.images.cam_2            # left_wrist
+    - observation.images.cam_3            # right_wrist
+
+skills:
+  # Issue #139 (2026-09-12 作成済み)。kinds 未指定 = token / overlay / common の 3 種 (HF にあるものと同じ)
+  - name: rotate_table_base
+    repo_id: Team-RAMEN/ramen-g1-ikea-assembly-ramen-ori-rotate-table-base
+    decode_jobs: 8                        # mp4 数 (8) より増やしても速くならない
+  - name: move_table_base
+    repo_id: Team-RAMEN/ramen-g1-ikea-assembly-ramen-ori-move-table-base
+    decode_jobs: 6
+  - name: insert_table_leg
+    repo_id: Team-RAMEN/ramen-g1-ikea-assembly-ramen-ori-insert-table-leg
+    decode_jobs: 10
+  # Issue #146: RAMEN-Ori を 6 skill で学習するための残り 3 skill。repo は chunk を
+  # merge_curated_lerobot_datasets.py --video-mode passthrough でまとめたもの (動画は元のまま)。
+  # token を読む学習は無いので焼かない。mp4 は cam ごとに 29〜41 本 (decode_jobs を使い切れる)
+  - name: pick_table_leg
+    repo_id: Team-RAMEN/ramen-g1-ikea-assembly-ramen-ori-pick-table-leg   # v3.0 版 (merged_v1 は v2.1 で GR00T の pick が参照)
+    decode_jobs: 8
+    kinds: [overlay, common]
+  - name: flip_table
+    repo_id: Team-RAMEN/ramen-g1-ikea-assembly-ramen-ori-flip-table
+    decode_jobs: 8
+    kinds: [overlay, common]
+  - name: rotate_leg_to_tighten
+    repo_id: Team-RAMEN/ramen-g1-ikea-assembly-ramen-ori-rotate-leg-to-tighten
+    decode_jobs: 8
+    kinds: [overlay, common]
+
+yolo:
+  # 改名の前の名前のまま (今は Team-RAMEN/ramen-g1-ikea-assembly-yolo-obb、古い名前は転送される。Issue #190)。
+  # "hf:<名前>@<revision>" が YOLO の cache の置き場所の hash の元なので、名前を変えると今の cache と別物になる。
+  ckpt: Team-RAMEN/IROS2026_RAMEN_Hara_yoloobb_upperpolicy
+  revision: 8221d0aef45d63666537c1f030810fb9b56dd1ed  # v11b (policy_config.yaml:yolo.ckpt_ref と同じ)
+  top_k: 32                               # 全件保存。超えた frame が出たら止まる (--fail-on-truncation)
+  imgsz: 800
+  conf: 0.15
+  num_classes: 7
+  batch_size: 64
+  num_shards: 4                           # 1 GPU に並べる process 数
+
+gpu:
+  # CUDA MPS: 複数 process (YOLO shard / GPU worker) の kernel を 1 GPU 上で同時に走らせる。
+  # true なら司令塔が起動時に nvidia-cuda-mps-control -d、終了時に quit する (計測で効けば on)
+  mps: true                               # 2026-09-12 計測: MPS なしの GPU 共有 59 frame/s → MPS 165 frame/s
+
+bake:
+  num_variants: 10                        # v0 + v1..v9 (ACT / GR00T の FRAME_CACHE_NUM_VARIANTS と同じ)
+  # jobs 個のうち cuda_workers 個が aug を GPU で計算し、残りは CPU で計算する (空いた worker が
+  # 次の frame を取るので、速い側が多く処理する)。cuda_workers は 0 か jobs と同じにする:
+  # 混成にすると frame ごとに乱数の出どころ (device) が変わり、check_unified_cache.py aug が
+  # 基準を作れず判定できなくなる (#146)。MPS 下では混成の方が遅いという計測もある (下記)。
+  # CPU だけだと 3 skill で 13〜27 h の見込み (2026-09-12 ローカル計測、hue / noise が重い)。
+  # 2026-09-12 Sakura 計測 (rotate 4,500 frame): CPU のみ 22.2 / MPS + 全 GPU 22 worker 165 /
+  # 24 worker 168 (最速) / 28 worker 165 / 32 worker 160 frame/s。MPS 下では CPU worker を混ぜると
+  # 遅くなる (GPU worker の画像 decode / 描画 / 書き出しと CPU を取り合う、32/12 で 107 frame/s)
+  jobs: 24
+  cuda_workers: 24
+  gpu_jpeg_encode: true                   # GPU worker は jpg encode も GPU (nvJPEG)
+  torch_threads: 1
+  chunksize: 16
+  overlay_conf: 0.30
+  overlay_thickness: 2
+
+pack:
+  jobs: 2                                 # tar 化 process 数 (出力先ごと)
+  poll_interval_s: 30
+
+upload:
+  num_workers: 4
+  interval_s: 300
+
+# 焼き込みの aug。model/ramen_ori/configs/base.yaml の Phase G 値に enabled=true / geometric=true を
+# 入れて固定したもの (データ生成条件をこのファイルで再現できるよう base.yaml から独立させている)。
+augmentation:
+  enabled: true
+  head:
+    color_jitter:
+      brightness: 0.2
+      contrast: 0.2
+      saturation: 0.3
+      hue: 0.02
+    gaussian_blur:
+      kernel_size: 3
+      sigma_min: 0.1
+      sigma_max: 1.5
+      p: 0.3
+    sharpness:
+      factor: 1.5
+      p: 0.5
+    gaussian_noise:
+      sigma: 0.010
+      p: 0.5
+    jpeg:
+      quality: [60, 90]
+      p: 0.3
+  wrist:
+    color_jitter:
+      brightness: 0.1
+      contrast: 0.1
+      saturation: 0.2
+      hue: 0.01
+    gaussian_blur:
+      kernel_size: 3
+      sigma_min: 0.1
+      sigma_max: 1.0
+      p: 0.3
+    sharpness:
+      factor: 1.5
+      p: 0.5
+    gaussian_noise:
+      sigma: 0.010
+      p: 0.5
+    jpeg:
+      quality: [60, 90]
+      p: 0.3
+  random_erasing:
+    p: 0.15
+    scale_min: 0.02
+    scale_max: 0.15
+  geometric:
+    enabled: true                         # head のみ (wrist は identity)
+    degrees: [-5.0, 5.0]
+    translate: [0.05, 0.05]
+  wrist_key_substring: wrist
+  wrist_cam_keys:
+    - observation.images.cam_2
+    - observation.images.cam_3

@@ -1,0 +1,12 @@
+# m × 高解像 (leg_tip / hole 系の効果が m でも出るか)
+model: m
+epochs: 100
+batch: 3
+imgsz: 800
+freeze: 0
+patience: 20
+optimizer: auto
+mosaic: 1.0
+mixup: 0.0
+run_name: m_imgsz800
+seed: 42

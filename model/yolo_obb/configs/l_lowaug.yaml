@@ -1,0 +1,12 @@
+# l × mosaic 抑制
+model: l
+epochs: 100
+batch: 2
+imgsz: 640
+freeze: 0
+patience: 20
+optimizer: auto
+mosaic: 0.5
+mixup: 0.0
+run_name: l_lowaug
+seed: 42

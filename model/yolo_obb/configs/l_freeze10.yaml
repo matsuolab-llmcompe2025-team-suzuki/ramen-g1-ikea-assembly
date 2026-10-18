@@ -1,0 +1,12 @@
+# l × backbone freeze
+model: l
+epochs: 100
+batch: 2
+imgsz: 640
+freeze: 10
+patience: 20
+optimizer: auto
+mosaic: 1.0
+mixup: 0.0
+run_name: l_freeze10
+seed: 42

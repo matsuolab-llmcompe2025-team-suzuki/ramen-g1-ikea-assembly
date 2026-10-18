@@ -1,0 +1,351 @@
+"""Non-blocking operator gate that actively holds the measured arm pose.
+
+The orchestrator must keep ticking while an operator is deciding whether to start a
+learned policy.  Blocking the main thread in ``input()`` would stop boundary-action
+publication and camera freshness checks.  This skill reads stdin on a daemon thread
+while its normal ``step`` method continues returning the held 14-D arm target.
+"""
+
+from __future__ import annotations
+
+import sys
+import threading
+import time
+from typing import Callable, Optional, Sequence
+
+import numpy as np
+
+from inference.desktop.lower_policy.pose_utils import arm_positions_from_joint_state
+from inference.desktop.lower_policy.skills.base import Skill
+
+
+#: 開始姿勢に届いたか。(届いた, 何をどう比べたかの 1 行)。
+ArrivalCheck = Callable[[np.ndarray], "tuple[bool, str]"]
+
+
+def joint_space_arrival(
+    measured_arm: Sequence[float],
+    target_arm: Sequence[float],
+    tolerance_rad: float,
+    joint_names: Sequence[str],
+) -> tuple[bool, str]:
+    """14 関節のうち一番離れた関節で、開始姿勢に届いたかを見る (sdk 経路・joint lane の判定)。"""
+    measured = np.asarray(measured_arm, dtype=np.float64).reshape(-1)
+    target = np.asarray(target_arm, dtype=np.float64).reshape(-1)
+    errors = np.abs(measured - target)
+    worst = int(np.argmax(errors))
+    return (
+        bool(errors[worst] <= tolerance_rad),
+        f"worst={joint_names[worst]} error={errors[worst]:.3f}rad "
+        f"tolerance={tolerance_rad:.2f}rad",
+    )
+
+
+def discard_pending_stdin() -> None:
+    """端末に溜まった入力を捨てる (tty でなければ何もしない)。
+
+    手前の確認 prompt で余分に押された Enter が buffer に残っていると、gate の
+    ``input()`` がそれを即座に読み、操作者が姿勢を見る前に policy が始まる。
+    """
+    try:
+        if not sys.stdin.isatty():
+            return
+        import termios
+
+        termios.tcflush(sys.stdin.fileno(), termios.TCIFLUSH)
+    except Exception:  # noqa: BLE001 - best effort; input() still gates
+        pass
+
+
+class OperatorConfirmationHoldSkill(Skill):
+    """Hold the pose until the operator presses Enter.
+
+    ``input_fn`` is injectable so the confirmation contract can be tested without a
+    terminal.  An EOF or input failure is fail-closed and is surfaced through
+    ``failure_reason``; it never advances to the policy.
+
+    ``arrival_check`` は問いを出す時点の実測の腕で「開始姿勢に届いたか」を見て、問いの
+    文言を変える。手前の準備動作が未到達なら本番経路では先へ進まないが、
+    到達判定もこの gate で重ねて確認し、違う姿勢からの開始を防ぐ。
+    判定は準備動作と同じもの (pose lane は手先、sdk・joint lane は関節角) を渡す。
+    省略時は判定せずに従来の文言。
+
+    ``start_adjuster`` (`skills/start_lift.StartLiftAdjuster`、Issue #188) を渡すと、問いの間に
+    U / D キーで開始の手の高さを 1 段ずつ変えられる。保持している目標を関節の速さを抑えて
+    新しい目標へ近づけ、着いて止まってから Enter が効く (``arrival_check`` は同じ目標を見ること)。
+
+    ``choice`` (`skills/policy_choice.PolicyChoice`、Issue #188 ② 段 3) を渡すと、問いの間に数字キーで
+    skill の model を選べる。受け付けた選択は確認のキーと同じく先へ進み、受け付けない選択
+    (読み込み中など) は待ち続ける。
+
+    ``set_leave_barrier`` (Issue #188 ② 段 2) を渡すと、Enter の後もそれが True になるまで
+    保持を続けてから先へ進む。model の読み込みは腕が止まっている間だけ行う
+    (`policies/load_plan.LoadPlan`)。読みかけの 1 本は途中で止められないので、動き出す前に待つ。
+    """
+
+    #: 入力 thread が自分の問い (操作・到達の詳細) を出すので、orchestrator は
+    #: この skill の間は操作表示を上書きしない (上書きすると受け付けるキーが消える)。
+    owns_operator_view = True
+
+    def __init__(
+        self,
+        *,
+        name: str,
+        next_skill_name: str,
+        input_fn: Callable[[str], str] = input,
+        cancellable_input_fn: Optional[Callable[[str, threading.Event], str]] = None,
+        discard_pending_input_fn: Callable[[], None] = discard_pending_stdin,
+        arrival_check: Optional[ArrivalCheck] = None,
+        require_arrival: bool = False,
+        hold_arm_target_provider: Optional[Callable[[], Optional[np.ndarray]]] = None,
+        start_adjuster=None,
+        choice=None,
+    ) -> None:
+        super().__init__()
+        self.name = name
+        self._next_skill_name = str(next_skill_name)
+        self._input_fn = input_fn
+        self._cancellable_input_fn = cancellable_input_fn
+        self._input_cancel = threading.Event()
+        self._discard_pending_input_fn = discard_pending_input_fn
+        self._arrival_check = arrival_check
+        self._require_arrival = bool(require_arrival)
+        self._hold_arm_target_provider = hold_arm_target_provider
+        self._hold_arm: Optional[np.ndarray] = None
+        self._latest_arm: Optional[np.ndarray] = None
+        self._confirmed = threading.Event()
+        self._reader_started = False
+        self._failure_reason: Optional[str] = None
+        self._lock = threading.Lock()
+        self._generation = 0
+        self._live_state_getter = None
+        self._start_adjuster = start_adjuster
+        self._choice = choice
+        self._last_step_s: Optional[float] = None
+        self._leave_ready_fn: Optional[Callable[[], bool]] = None
+        self._leave_cancel_fn: Optional[Callable[[], None]] = None
+        self._leave_description = ""
+        self._leave_wait_logged = False
+
+    def set_leave_barrier(
+        self,
+        ready_fn: Callable[[], bool],
+        *,
+        description: str,
+        cancel_fn: Optional[Callable[[], None]] = None,
+    ) -> None:
+        """Enter の後、動き出す前に待つもの (Issue #188)。False の間は保持を続ける。
+
+        ``cancel_fn`` は Enter の確認を取り消したとき (到達・静止が崩れた) に呼ぶ
+        (`LoadPlan.stay`: 聞いた時点で止めた読み込みを続けさせる)。
+        """
+        self._leave_ready_fn = ready_fn
+        self._leave_cancel_fn = cancel_fn
+        self._leave_description = str(description)
+
+    def require_fresh_state(self, getter, *, max_age_s, max_speed_rad_s):
+        self._live_state_getter = getter
+        self._max_age_s = max_age_s
+        self._max_speed_rad_s = max_speed_rad_s
+
+    def _live_arrival(self):
+        if self._live_state_getter is None or not self._require_arrival:
+            return True
+        state = self._live_state_getter()
+        stamp = getattr(state, "received_monotonic_ns", None)
+        if stamp is None or not (0 <= time.monotonic() - stamp / 1e9 <= self._max_age_s):
+            return False
+        arm = arm_positions_from_joint_state(tuple(state.name), state.position, self.name)
+        velocity = arm_positions_from_joint_state(tuple(state.name), state.velocity, self.name)
+        return bool(
+            np.isfinite(arm).all() and np.isfinite(velocity).all()
+            and np.max(np.abs(velocity)) <= self._max_speed_rad_s
+            and (self._arrival_check is None or self._arrival_check(arm)[0])
+        )
+
+    def _on_start(self, params: dict) -> None:
+        with self._lock:
+            self._input_cancel.set()
+            self._input_cancel = threading.Event()
+            self._generation += 1
+            self._hold_arm = None
+            self._latest_arm = None
+            self._confirmed.clear()
+            self._reader_started = False
+            self._failure_reason = None
+            self._last_step_s = None
+            self._leave_wait_logged = False
+
+    def _on_stop(self) -> None:
+        with self._lock:
+            self._input_cancel.set()
+            self._generation += 1
+            self._confirmed.clear()
+
+    def _prompt(self, arm: np.ndarray) -> str:
+        prompt = self._base_prompt(arm)
+        if self._start_adjuster is not None:
+            prompt += "\n[start-lift] " + self._start_adjuster.status()
+        return prompt
+
+    def _base_prompt(self, arm: np.ndarray) -> str:
+        if self._arrival_check is None:
+            return (
+                f"[gate] {self._next_skill_name} initial arm/hand pose is reached and "
+                "actively held. Press Enter to start the policy, or Ctrl+C to stop: "
+            )
+        reached, detail = self._arrival_check(arm)
+        if reached:
+            return (
+                f"[gate] {self._next_skill_name} initial arm/hand pose is reached "
+                f"({detail}) and actively held. Press Enter to start the policy, or "
+                "Ctrl+C to stop: "
+            )
+        instruction = (
+            "Enter after arrival, or Ctrl+C to stop: "
+            if self._require_arrival
+            else "Enter to start the policy from here anyway, or Ctrl+C to stop: "
+        )
+        return (
+            f"[gate] WARNING: {self._next_skill_name} initial arm pose is NOT reached "
+            f"({detail}); the arms are held where they are. Check the robot, then press "
+            + instruction
+        )
+
+    def _read_confirmation(self, prompt: str, generation: int, cancel_event=None) -> None:
+        cancel_event = self._input_cancel if cancel_event is None else cancel_event
+        try:
+            # 姿勢に着く前に押された Enter で policy を始めない。
+            if self._cancellable_input_fn is None:
+                self._discard_pending_input_fn()
+            while True:
+                if cancel_event.is_set():
+                    return
+                if self._cancellable_input_fn is None:
+                    key = self._input_fn(prompt)
+                else:
+                    key = self._cancellable_input_fn(prompt, cancel_event)
+                if self._start_adjuster is not None and key in self._start_adjuster.keys:
+                    # 手の高さを変えるだけで、まだ始めない (着いてから Enter)
+                    print(self._start_adjuster.adjust(key), file=sys.stderr)
+                    with self._lock:
+                        if generation != self._generation:
+                            return
+                        latest = None if self._latest_arm is None else self._latest_arm.copy()
+                    prompt = self._prompt(latest if latest is not None else self._hold_arm)
+                    continue
+                if self._choice is not None and key in self._choice.keys:
+                    with self._lock:
+                        if generation != self._generation:
+                            return
+                    # model を選ぶ。受け付けたら確認のキーと同じく先へ、でなければ待ち続ける
+                    accepted, message = self._choice.choose(key)
+                    print(message, file=sys.stderr)
+                    if not accepted:
+                        continue
+                with self._lock:
+                    if generation != self._generation:
+                        return
+                    latest = None if self._latest_arm is None else self._latest_arm.copy()
+                live_arrived = self._live_arrival()
+                if (
+                    live_arrived and (not self._require_arrival
+                    or self._arrival_check is None
+                    or (latest is not None and self._arrival_check(latest)[0]))
+                ):
+                    break
+                detail = (
+                    "no fresh, stationary arm state"
+                    if not live_arrived or latest is None or self._arrival_check is None
+                    else self._arrival_check(latest)[1]
+                )
+                print(
+                    f"[gate] initial pose not reached ({detail}); Enter ignored",
+                    file=sys.stderr,
+                )
+                # 次の問いは今の実測で作り直す (どの関節がどれだけ離れているかを出す)
+                prompt = self._prompt(latest if latest is not None else self._hold_arm)
+        except Exception as exc:  # Surface reader failures instead of leaving a silent gate.
+            with self._lock:
+                if generation != self._generation:
+                    return
+                self._failure_reason = (
+                    f"operator confirmation input failed before "
+                    f"{self._next_skill_name}: {exc!r}"
+                )
+            return
+        with self._lock:
+            if generation != self._generation:
+                return
+            self._confirmed.set()
+        print(
+            f"[gate] operator confirmed start of {self._next_skill_name}",
+            file=sys.stderr,
+        )
+
+    def step(self, obs: dict) -> np.ndarray:
+        state = obs.get("joint_state")
+        if state is not None:
+            latest = arm_positions_from_joint_state(
+                tuple(state.name), np.asarray(state.position, dtype=np.float64), self.name
+            )
+            with self._lock:
+                self._latest_arm = latest
+        if self._hold_arm is None:
+            if state is None:
+                raise RuntimeError(f"{self.name} requires a live joint state to hold")
+            target = (
+                self._hold_arm_target_provider()
+                if self._hold_arm_target_provider is not None else None
+            )
+            self._hold_arm = (
+                self._latest_arm.copy() if target is None
+                else np.asarray(target, dtype=np.float64).copy()
+            )
+            if self._hold_arm.shape != (14,) or not np.isfinite(self._hold_arm).all():
+                raise RuntimeError(f"{self.name} cannot hold an invalid arm target")
+        if self._start_adjuster is not None:
+            # 開始待ちの目標 (U / D で変わる) へ、関節の速さを抑えて近づける
+            now = time.monotonic()
+            dt = 0.0 if self._last_step_s is None else now - self._last_step_s
+            self._last_step_s = now
+            self._hold_arm = self._start_adjuster.ramp(self._hold_arm, dt)
+        if not self._reader_started:
+            self._reader_started = True
+            threading.Thread(
+                target=self._read_confirmation,
+                args=(self._prompt(self._latest_arm), self._generation, self._input_cancel),
+                name=f"{self.name}-stdin",
+                daemon=True,
+            ).start()
+        return self._hold_arm.copy()
+
+    @property
+    def is_complete(self) -> bool:
+        if self._confirmed.is_set() and not self._live_arrival():
+            self._confirmed.clear()
+            self._reader_started = False
+            self._leave_wait_logged = False
+            if self._leave_cancel_fn is not None:
+                self._leave_cancel_fn()
+            print(
+                "[gate] arrival/fresh stationary state changed before transition; "
+                "Enter ignored. Wait for the pose to settle, then press Enter again.",
+                file=sys.stderr,
+            )
+        if not self._confirmed.is_set():
+            return False
+        if self._leave_ready_fn is not None and not self._leave_ready_fn():
+            if not self._leave_wait_logged:
+                self._leave_wait_logged = True
+                print(
+                    f"[gate] {self.name}: holding until {self._leave_description}",
+                    file=sys.stderr,
+                )
+            return False
+        return True
+
+    @property
+    def failure_reason(self) -> Optional[str]:
+        with self._lock:
+            return self._failure_reason

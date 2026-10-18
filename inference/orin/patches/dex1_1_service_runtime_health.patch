@@ -1,0 +1,79 @@
+diff --git a/main.cpp b/main.cpp
+index 3084c58..38fa552 100644
+--- a/main.cpp
++++ b/main.cpp
+@@ -6,4 +6,6 @@
+ #include "param.h"
++#include <algorithm>
++#include <cstdlib>
+ #include <map>
+ #include <memory>
+ #include <spdlog/spdlog.h>
+@@ -18,4 +20,7 @@
+ #include <filesystem>
+ 
++constexpr uint32_t kDex1HealthProtocolMagic = 0x44583131; // ASCII "DX11"
++constexpr int kSerialFailureExitThreshold = 20;
++
+ // Function to list available serial ports
+ std::vector<std::string> getAvailableSerialPorts() {
+@@ -67,11 +72,49 @@ private:
+             cmd_.timeout = 0;
+         }
+ 
+-        serial_->sendRecv(&cmd_, &state_);
++        const bool received = serial_->sendRecv(&cmd_, &state_);
++        if (!received) {
++            ++consecutive_serial_failures_;
++            if (consecutive_serial_failures_ == 1 ||
++                consecutive_serial_failures_ == kSerialFailureExitThreshold) {
++                spdlog::error(
++                    "Dex1 motor {} serial transaction failed (consecutive={})",
++                    id_, consecutive_serial_failures_);
++            }
++            // Never republish the previous MotorData as if it were a fresh
++            // hardware sample.  Let the DDS state become stale instead.
++            if (consecutive_serial_failures_ >= kSerialFailureExitThreshold) {
++                // The systemd unit uses Restart=on-failure.  Exiting here
++                // recovers a wedged serial port instead of publishing stale
++                // state forever.
++                std::_Exit(2);
++            }
++            return;
++        }
++        consecutive_serial_failures_ = 0;
++        if (state_.merror != last_motor_error_) {
++            if (state_.merror == 0) {
++                spdlog::info("Dex1 motor {} fault cleared", id_);
++            } else {
++                spdlog::error(
++                    "Dex1 motor {} reported fault 0x{:x}; mode={} shell_temp={}C",
++                    id_, state_.merror, state_.mode, state_.temp);
++            }
++            last_motor_error_ = state_.merror;
++        }
+         if (pub_->trylock()) {
+             pub_->msg_.states()[0].q() = state_.q / gear_ratio_;
+             pub_->msg_.states()[0].dq() = state_.dq / gear_ratio_;
+             pub_->msg_.states()[0].tau_est() = state_.tau * gear_ratio_;
++            pub_->msg_.states()[0].mode() = state_.mode;
++            pub_->msg_.states()[0].temperature() = static_cast<uint8_t>(
++                std::clamp(state_.temp, 0, 255));
++            // reserve[0] carries the full motor fault bitmask. reserve[1]
++            // identifies this extension so old official bridges remain
++            // backward compatible on the Desktop.
++            pub_->msg_.states()[0].reserve()[0] =
++                static_cast<uint32_t>(state_.merror);
++            pub_->msg_.states()[0].reserve()[1] = kDex1HealthProtocolMagic;
+             pub_->unlockAndPublish();
+         }
+     }
+@@ -85,6 +128,8 @@ private:
+     std::shared_ptr<unitree::robot::SubscriptionBase<unitree_go::msg::dds_::MotorCmds_>> sub_;
+     std::shared_ptr<unitree::robot::RealTimePublisher<unitree_go::msg::dds_::MotorStates_>> pub_;
+     std::unique_ptr<unitree::common::RecurrentThread> thread_;
++    int consecutive_serial_failures_ = 0;
++    int last_motor_error_ = 0;
+ };
+ 
+ // Main server class, handles motor detection, DDS setup, and calibration

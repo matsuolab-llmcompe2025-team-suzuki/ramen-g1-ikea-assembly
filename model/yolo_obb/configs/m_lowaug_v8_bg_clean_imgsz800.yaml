@@ -1,0 +1,29 @@
+# Issue #108 v8_bg_clean_imgsz800: v8_bg + fliplr=0 + erasing=0 (default 悪化原因除去)
+# base: v8_bg (mAP50/recall top) + ultralytics default active な 2 augment を明示 disable
+#
+# 除去理由:
+# - fliplr = 0.5 (default): 左右反転で hand_right (class 5) と hand_left (class 6) の
+#   学習が破壊される (反転後 image で右手位置に来た "hand_right" を class 5 のまま学ぶ矛盾)
+# - erasing = 0.4 (default): random erase で workspace/leg 等の object が消失する可能性
+#
+# note: auto_augment (default "randaugment") は classification 専用、detection では発動なし。
+#       Albumentations は yolo_obb env で未 install、ultralytics 側で auto-skip、発動なし。
+model: m
+epochs: 100
+batch: 4
+imgsz: 800
+freeze: 0
+patience: 20
+optimizer: auto
+mosaic: 0.5
+mixup: 0.0
+run_name: m_lowaug_v8_bg_clean_imgsz800
+seed: 42
+data: data/yolo_obb/configs/dataset_v8_bg.yaml
+workers: 2
+scale: 0.6
+translate: 0.2
+degrees: 10.0
+perspective: 0.001
+fliplr: 0.0          # default 0.5 → 0.0 (hand_right/left 学習破壊 回避)
+erasing: 0.0         # default 0.4 → 0.0 (object 消失 回避)

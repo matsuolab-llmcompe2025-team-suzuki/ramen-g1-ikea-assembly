@@ -1,0 +1,28 @@
+# YOLO OBB dataset config (Issue #108 v8_move51)
+# v8 stack (元 + v5_material + v8_zoomout) に move-only augment を N=13 追加して move ratio 51% 達成
+# = v4_r50 pattern (「augment 追加で増やす」) を v8 aug 環境で踏襲。
+#
+# ratio 計算:
+#   元 (68m/322nm) + v5_material_random (204m/966nm) + v8_zoomout_random (204m/966nm)
+#   + v5_material_move51_add (884m/0nm) + v8_zoomout_move51_add (884m/0nm)
+#   = move 2244 / non-move 2254 = **move ratio 49.9%** (≈ 50%)
+#
+# ablation 目的: v8 環境 (workspace 改善済) で move 51% の追加効果 (v4_r50 pattern 再現)
+path: /home/ubuntu/work_dir/iros/iros_2026_ramen/data/yolo_obb
+train:
+  - dataset/images/train
+  - augmentation/synthetic/v5_material_random/images
+  - augmentation/synthetic/v8_zoomout_random/images
+  - augmentation/synthetic/v5_material_move51_add/images
+  - augmentation/synthetic/v8_zoomout_move51_add/images
+val: dataset/images/val
+
+nc: 7
+names:
+  0: workspace
+  1: leg
+  2: leg_tip
+  3: hole
+  4: table_top
+  5: hand_right
+  6: hand_left

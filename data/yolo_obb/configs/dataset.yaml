@@ -1,0 +1,15 @@
+# YOLO OBB dataset config (Issue #45 v1 / Issue #53 v2)
+# 966 frames / 956 train / 10 val / skill stratified split
+path: /home/ubuntu/work_dir/iros/iros_2026_ramen/data/yolo_obb/dataset
+train: images/train
+val: images/val
+
+nc: 7
+names:
+  0: workspace
+  1: leg
+  2: leg_tip
+  3: hole
+  4: table_top
+  5: hand_right
+  6: hand_left

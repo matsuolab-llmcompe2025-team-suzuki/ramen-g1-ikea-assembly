@@ -1,0 +1,11 @@
+# 学習 run の出力 (weights, plots, results.csv、~50-500MB/run)
+runs/
+
+# .pt weight は wandb / HF 側に上げる (今回は local only)
+
+# Python
+__pycache__/
+*.pyc
+
+# ダウンロードした base weight
+yolo11*-obb.pt

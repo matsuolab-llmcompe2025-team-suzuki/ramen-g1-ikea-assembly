@@ -1,0 +1,27 @@
+# Issue #108 v6_geometryaug: built-in geometry aug 強化で workspace localize 改善
+# base: v5_material (chroma-key material aug 継続) + geometry aug 強化
+#
+# 目的: v5_material の predict 目視で発見した「workspace bbox が画面全体化」問題への対策。
+# workspace は現行 train image 内で常にほぼ画面全体を占めるため、model が「workspace = 画面全体」と
+# 学習してしまい、workspace が縮小/移動された scene で localize 失敗する懸念。
+#
+# 対策: ultralytics built-in geometry aug (scale/translate/degrees/perspective) を強化し、
+# workspace が画面の一部だけに映る効果を train 時に人工的に導入 (custom copy-paste script より軽量)。
+model: m
+epochs: 100
+batch: 4
+imgsz: 640
+freeze: 0
+patience: 20
+optimizer: auto
+mosaic: 0.5
+mixup: 0.0
+run_name: m_lowaug_v6_geometryaug
+seed: 42
+data: data/yolo_obb/configs/dataset_v5_material.yaml
+workers: 2
+# Geometry aug 強化 (ultralytics default: scale 0.5, translate 0.1, degrees 0.0, perspective 0.0)
+scale: 0.8         # ±80% ランダム scaling (workspace 縮小効果)
+translate: 0.3     # ±30% 平行移動 (workspace 位置バラつき)
+degrees: 15.0      # ±15° 回転 (OBB に自然)
+perspective: 0.001 # 弱透視 (視点変化)

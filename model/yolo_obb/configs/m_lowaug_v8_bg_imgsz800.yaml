@@ -1,0 +1,22 @@
+# Issue #108 v8_bg_imgsz800: v8 stack に bg augment (v4_flat pattern) を追加
+# base: v8_zoomout_imgsz800 + data だけ dataset_v8_bg.yaml (v4_flat augment 追加)
+#
+# ablation 目的: v8 環境 (workspace 改善済) で bg augment を戻すと mAP50-95 追加改善するか。
+# 「v8 で dropped した v4 系 bg augment を復活」の効果検証。
+model: m
+epochs: 100
+batch: 4
+imgsz: 800
+freeze: 0
+patience: 20
+optimizer: auto
+mosaic: 0.5
+mixup: 0.0
+run_name: m_lowaug_v8_bg_imgsz800
+seed: 42
+data: data/yolo_obb/configs/dataset_v8_bg.yaml
+workers: 2
+scale: 0.6
+translate: 0.2
+degrees: 10.0
+perspective: 0.001

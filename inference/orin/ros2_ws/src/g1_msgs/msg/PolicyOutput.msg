@@ -1,0 +1,9 @@
+std_msgs/Header header
+string policy_id
+string command_type
+string frame_id
+trajectory_msgs/JointTrajectory joint_trajectory
+float32[] hand_command
+float32 confidence
+string status
+string[] diagnostics

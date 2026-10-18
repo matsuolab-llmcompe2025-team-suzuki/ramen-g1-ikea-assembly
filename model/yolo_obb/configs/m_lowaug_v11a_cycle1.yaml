@@ -1,0 +1,24 @@
+# v11a Cycle 1: v10_hsv07 baseline + head_left cycle1 (101 real frame) 追加。
+# 目的: 新環境 (head_left mp4) を 100 frame だけ学習させ、Cycle 2 で残り frame の
+# pseudo-label の質を上げる bootstrap 目的。val は v10 と同じ (dataset/images/val 10 枚)。
+# 学習設定は v10_hsv07_imgsz800 と同一 (dataset のみ差替え、hsv_v=0.7 継承)。
+model: m
+epochs: 100
+batch: 4
+imgsz: 800
+freeze: 0
+patience: 20
+optimizer: auto
+mosaic: 0.5
+mixup: 0.0
+run_name: m_lowaug_v11a_cycle1
+seed: 42
+data: data/yolo_obb/configs/dataset_v11a.yaml
+workers: 2
+scale: 0.6
+translate: 0.2
+degrees: 10.0
+perspective: 0.001
+fliplr: 0.0
+erasing: 0.0
+hsv_v: 0.7

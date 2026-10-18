@@ -1,0 +1,120 @@
+Bootstrap: docker
+From: nvidia/cuda:12.8.1-base-ubuntu24.04
+
+%labels
+    Author "gr00t-lerobot"
+    Description "LeRobot v0.6.0 training environment for NVIDIA GR00T N1.7"
+    LeRobotVersion "0.6.0"
+    LeRobotCommit "30da8e687a6dfc617fcd94afc367ac7071c376ce"
+    CUDAVersion "12.8.1"
+    PythonVersion "3.12"
+
+%environment
+    export PATH="/opt/lerobot/.venv/bin:${PATH}"
+    export PYTHONNOUSERSITE=1
+    export PYTHONUNBUFFERED=1
+    export MUJOCO_GL="${MUJOCO_GL:-egl}"
+    export XDG_CACHE_HOME="${XDG_CACHE_HOME:-${HOME}/.cache}"
+    export HF_HOME="${HF_HOME:-${XDG_CACHE_HOME}/huggingface}"
+    export HF_LEROBOT_HOME="${HF_LEROBOT_HOME:-${HF_HOME}/lerobot}"
+    export TORCH_HOME="${TORCH_HOME:-${XDG_CACHE_HOME}/torch}"
+    export TRITON_CACHE_DIR="${TRITON_CACHE_DIR:-${XDG_CACHE_HOME}/triton}"
+    export TOKENIZERS_PARALLELISM="${TOKENIZERS_PARALLELISM:-false}"
+
+%post
+    set -eu
+
+    export DEBIAN_FRONTEND=noninteractive
+    export UV_VERSION=0.8.0
+    export LEROBOT_COMMIT=30da8e687a6dfc617fcd94afc367ac7071c376ce
+
+    apt-get update
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        cmake \
+        curl \
+        ffmpeg \
+        git \
+        libegl1 \
+        libgeos-dev \
+        libgl1 \
+        libglib2.0-0 \
+        libusb-1.0-0-dev \
+        ninja-build \
+        pkg-config \
+        portaudio19-dev \
+        python3.12 \
+        python3.12-dev \
+        python3.12-venv \
+        speech-dispatcher
+
+    curl -LsSf "https://astral.sh/uv/${UV_VERSION}/install.sh" \
+        | env UV_INSTALL_DIR=/usr/local/bin sh
+
+    mkdir -p /opt/lerobot
+    curl -L --fail --retry 3 \
+        "https://github.com/huggingface/lerobot/archive/${LEROBOT_COMMIT}.tar.gz" \
+        | tar -xz -C /opt/lerobot --strip-components=1
+
+    cd /opt/lerobot
+    uv sync \
+        --locked \
+        --python python3.12 \
+        --extra groot \
+        --extra training \
+        --no-cache
+
+    # Triton's bundled ptxas occasionally loses its executable bit when an
+    # image is transported through an OCI layer.
+    find /opt/lerobot/.venv -type f -path '*/triton/backends/nvidia/bin/ptxas' \
+        -exec chmod 0755 {} \;
+
+    apt-get clean
+    rm -rf /var/lib/apt/lists/* /root/.cache
+
+%test
+    set -eu
+    /opt/lerobot/.venv/bin/python - <<'PY'
+import importlib.metadata
+
+import torch
+from lerobot.policies.groot import GrootConfig
+
+assert importlib.metadata.version("lerobot") == "0.6.0"
+assert torch.version.cuda == "12.8"
+assert GrootConfig().type == "groot"
+print(f"LeRobot {importlib.metadata.version('lerobot')}")
+print(f"PyTorch {torch.__version__} (CUDA {torch.version.cuda})")
+print("GR00T policy import: OK")
+PY
+    /opt/lerobot/.venv/bin/lerobot-train --help >/dev/null
+
+%runscript
+    if [ "$#" -eq 0 ]; then
+        exec /bin/bash
+    fi
+    exec "$@"
+
+%help
+    LeRobot v0.6.0 + NVIDIA GR00T N1.7 training container
+
+    Build:
+      apptainer build lerobot-groot-v0.6.0.sif lerobot-groot.def
+
+    Verify GPU access (NVIDIA driver 570.86 or newer):
+      apptainer exec --nv lerobot-groot-v0.6.0.sif \
+        python -c 'import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name())'
+
+    Train:
+      apptainer exec --nv --bind "$PWD:/workspace" \
+        lerobot-groot-v0.6.0.sif lerobot-train \
+        --dataset.repo_id=<USER>/<DATASET> \
+        --policy.type=groot \
+        --policy.device=cuda \
+        --policy.base_model_path=nvidia/GR00T-N1.7-3B \
+        --policy.embodiment_tag=new_embodiment \
+        --output_dir=/workspace/outputs/groot
+
+    The host home directory is mounted by Apptainer by default, so Hugging Face
+    model and dataset caches are kept under ~/.cache rather than in the SIF.

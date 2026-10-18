@@ -1,0 +1,24 @@
+# v11b Cycle 2 最終: v10_hsv07 baseline + head_left cycle1 (101 real) + cycle2 (623: user 195 + v11a pseudo 428)。
+# 目的: 新環境 (head_left mp4) を frame 密にカバーした最終版。cycle1 で v11a を bootstrap し、
+# cycle2 の pseudo-label の質を高めた上での full training。
+# 学習設定は v10_hsv07_imgsz800 / v11a_cycle1 と同一 (hsv_v=0.7、他 aug 継承)。
+model: m
+epochs: 100
+batch: 4
+imgsz: 800
+freeze: 0
+patience: 20
+optimizer: auto
+mosaic: 0.5
+mixup: 0.0
+run_name: m_lowaug_v11b
+seed: 42
+data: data/yolo_obb/configs/dataset_v11b.yaml
+workers: 2
+scale: 0.6
+translate: 0.2
+degrees: 10.0
+perspective: 0.001
+fliplr: 0.0
+erasing: 0.0
+hsv_v: 0.7

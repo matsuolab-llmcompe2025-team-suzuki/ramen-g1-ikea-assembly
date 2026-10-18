@@ -1,0 +1,16 @@
+# YOLO OBB dataset config (Issue #108 v5_downsample)
+# move_to_table 50% downsample: 68 (move 全保持) + non-move 各 skill 14 枚 = 138 train
+# bg augment なし・元 image のみ (v4_r50 との fair 比較用)、val は元 fully-fixed 維持
+path: /home/ubuntu/work_dir/iros/iros_2026_ramen/data/yolo_obb/dataset_v5_downsample
+train: images/train
+val: images/val
+
+nc: 7
+names:
+  0: workspace
+  1: leg
+  2: leg_tip
+  3: hole
+  4: table_top
+  5: hand_right
+  6: hand_left

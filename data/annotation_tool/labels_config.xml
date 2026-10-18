@@ -1,0 +1,19 @@
+<!--
+  Label Studio labeling config for IROS 2026 Upper Policy 7-class OBB annotation.
+  Epic #43 / Issue #44.
+  RectangleLabels は canRotate="true" で OBB (Oriented BBox) 対応 (LS 1.9+)。
+  class 定義の正式版は class_map.json (id ↔ name の対応はここと一致させること)。
+-->
+<View>
+  <Image name="image" value="$image" zoom="true" zoomControl="true" rotateControl="false"/>
+  <RectangleLabels name="label" toName="image" canRotate="true"
+                   strokeWidth="2" opacity="0.5" fillOpacity="0.05">
+    <Label value="workspace"  background="#a1c4fd" hotkey="1"/>
+    <Label value="leg"         background="#ffb347" hotkey="2"/>
+    <Label value="leg_tip"     background="#ff6961" hotkey="3"/>
+    <Label value="hole"        background="#77dd77" hotkey="4"/>
+    <Label value="table_top"   background="#c3aed6" hotkey="5"/>
+    <Label value="hand_right"  background="#fdfd96" hotkey="6"/>
+    <Label value="hand_left"   background="#f49ac2" hotkey="7"/>
+  </RectangleLabels>
+</View>

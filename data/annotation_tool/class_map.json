@@ -1,0 +1,43 @@
+{
+  "version": "v1",
+  "epic": 43,
+  "issue": 44,
+  "description": "IROS 2026 Upper Policy YOLO-OBB 用 7-class 定義。詳細は data/annotation_tool/README.md 参照。",
+  "classes": [
+    {
+      "id": 0,
+      "name": "workspace",
+      "description": "作業場所 (床マット / floor area)"
+    },
+    {
+      "id": 1,
+      "name": "leg",
+      "description": "足 (棒全体)"
+    },
+    {
+      "id": 2,
+      "name": "leg_tip",
+      "description": "足の先端 (ねじ跡がある挿入側の端)"
+    },
+    {
+      "id": 3,
+      "name": "hole",
+      "description": "天板の脚穴"
+    },
+    {
+      "id": 4,
+      "name": "table_top",
+      "description": "天板"
+    },
+    {
+      "id": 5,
+      "name": "hand_right",
+      "description": "ロボットの右手"
+    },
+    {
+      "id": 6,
+      "name": "hand_left",
+      "description": "ロボットの左手"
+    }
+  ]
+}

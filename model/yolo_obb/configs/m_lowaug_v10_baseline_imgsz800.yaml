@@ -1,0 +1,26 @@
+# Issue #108 v10_baseline_imgsz800: v10 dataset + v8_bg_clean stack (fliplr=0/erasing=0)
+# base: v8_bg_clean 思想 (fliplr=0/erasing=0 のみ) を v10 dataset (956 image) で走らせる。
+# hsv_v は明示指定せず ultralytics default (0.4) のまま = v10_hsv07 との直接 A/B baseline。
+#
+# 検証目的: v10 dataset 上で hsv_v=0.7 (v10_hsv07) vs default 0.4 (この run) の効果差。
+# fair 比較: dataset / fliplr / erasing / 他 augment 全て共通、hsv_v のみ差。
+model: m
+epochs: 100
+batch: 4
+imgsz: 800
+freeze: 0
+patience: 20
+optimizer: auto
+mosaic: 0.5
+mixup: 0.0
+run_name: m_lowaug_v10_baseline_imgsz800
+seed: 42
+data: data/yolo_obb/configs/dataset_v10.yaml
+workers: 2
+scale: 0.6
+translate: 0.2
+degrees: 10.0
+perspective: 0.001
+fliplr: 0.0          # hand_right/left 学習破壊 回避 (今度こそ argparse override 反映される)
+erasing: 0.0         # object 消失 回避
+# hsv_v: 未指定 = ultralytics default 0.4

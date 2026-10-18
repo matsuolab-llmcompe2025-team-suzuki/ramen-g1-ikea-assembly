@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>Curation Tool</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div id="topbar">
+    <span id="ep-info">ep -/- </span>
+    <span id="seg-info">seg -/-</span>
+    <span id="progress">-</span>
+    <label id="ep-jump-label" title="ep 番号入力 → Go で任意 ep へ (g: focus)">
+      goto: <input type="number" id="ep-jump-input" min="0" placeholder="ep #">
+      <button id="ep-jump-btn">→ Go</button>
+    </label>
+    <span id="status-msg"></span>
+    <span id="prefetch-badge" class="hidden"></span>
+    <label id="auto-push-delete-label" title="Next ep 時に labels を HF push + local + HF video cache 削除">
+      <input type="checkbox" id="auto-push-delete-toggle" checked>
+      auto push+delete
+    </label>
+    <button id="next-ep-btn" title="次の ep へ - toggle ON なら push+delete 実行">→ Next ep</button>
+    <button id="reset-ep-btn" title="この ep の全 label を削除、LeRobot 元状態に戻す">⟳ ep reset</button>
+    <button id="hf-sync-btn">☁ HF 同期</button>
+  </div>
+
+  <div id="layout">
+    <div id="segment-list-panel">
+      <h3>Segments</h3>
+      <ul id="segment-list"></ul>
+    </div>
+
+    <div class="resize-handle" id="resize-left" title="drag to resize"></div>
+
+    <div id="video-panel">
+      <div id="episode-timeline-panel">
+        <div class="timeline-label">
+          <span>Episode timeline</span>
+          <span id="timeline-ep-info">ep - · - frames · - units</span>
+        </div>
+        <div id="episode-timeline">
+          <div id="timeline-track"></div>
+          <div id="timeline-playhead"></div>
+        </div>
+      </div>
+
+      <div id="video-wrap">
+        <video id="tile-video" controls muted></video>
+        <div id="video-loading-overlay" class="hidden">
+          <div class="spinner"></div>
+          <div class="video-loading-msg">動画を読み込み中… (初回は HF から
+          download するので 30-60秒 かかる場合があります)</div>
+        </div>
+      </div>
+
+      <div id="segment-info">
+        <div class="info-header">
+          <span id="info-saved-badge" class="hidden">✓ SAVED</span>
+        </div>
+        <div class="info-row">
+          <label class="info-label">task:</label>
+          <select id="info-task-select" class="info-select">
+            <option value="">(pick task)</option>
+          </select>
+          <span class="task-idx" id="info-task">-</span>
+        </div>
+        <div>frames: <span id="info-frames">-</span></div>
+        <div>duration: <span id="info-duration">-</span></div>
+        <div>current frame: <span id="info-current-frame">-</span></div>
+      </div>
+    </div>
+
+    <div class="resize-handle" id="resize-right" title="drag to resize"></div>
+
+    <div id="verdict-panel">
+      <h3>Verdict</h3>
+      <button class="verdict-btn v-optimal" data-verdict="optimal">
+        <span class="key">1</span>
+        <span class="verdict-label">最良</span>
+        <span class="verdict-sub">optimal / 模範</span>
+      </button>
+      <button class="verdict-btn v-success" data-verdict="success">
+        <span class="key">2</span>
+        <span class="verdict-label">成功</span>
+        <span class="verdict-sub">success / 特に問題無し</span>
+      </button>
+      <button class="verdict-btn v-ambiguous" data-verdict="ambiguous">
+        <span class="key">3</span>
+        <span class="verdict-label">微妙</span>
+        <span class="verdict-sub">ambiguous / 判定保留</span>
+      </button>
+      <button class="verdict-btn v-failure" data-verdict="failure">
+        <span class="key">4</span>
+        <span class="verdict-label">失敗</span>
+        <span class="verdict-sub">failure / category 選択要</span>
+      </button>
+
+      <div id="failure-category-panel" class="hidden">
+        <h4>Failure category <span class="hint">[f] focus / [+] new</span></h4>
+        <div id="selected-category-chip">
+          <span class="chip-label">選択中:</span>
+          <span id="selected-category-value">—</span>
+        </div>
+        <div class="candidates-label">候補</div>
+        <div id="failure-category-buttons"></div>
+      </div>
+
+      <div id="right-notes">
+        <p><strong>1-3</strong>: 即 save+next / <strong>4</strong>: category 選択→save</p>
+        <p><strong>s</strong>: 現 frame で split / <strong>m</strong>: 前 unit と merge</p>
+        <p><strong>[</strong> <strong>]</strong>: 現 frame を start/end に設定</p>
+        <p><strong>Space</strong>: play/pause / <strong>←→</strong>: frame / <strong>Shift+←→</strong>: 1sec</p>
+        <p><strong>Backspace</strong>: 前 unit に戻る / timeline click: unit jump</p>
+        <p>次 ep は button (誤爆回避で shortcut 無し) / <strong>g</strong>: ep jump input focus</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- HF sync modal -->
+  <div id="hf-modal" class="modal hidden">
+    <div class="modal-content">
+      <h2>HF に push しますか?</h2>
+      <div id="hf-preview">loading...</div>
+      <label for="hf-commit-msg">Commit message:</label>
+      <input id="hf-commit-msg" type="text">
+      <div class="modal-buttons">
+        <button id="hf-cancel">Cancel</button>
+        <button id="hf-push">Push to HF</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- New failure category dialog -->
+  <div id="cat-dialog" class="modal hidden">
+    <div class="modal-content">
+      <h2>New failure category</h2>
+      <label for="cat-key">Key (english snake_case):</label>
+      <input id="cat-key" type="text" placeholder="slip">
+      <label for="cat-label-input">Label (日本語):</label>
+      <input id="cat-label-input" type="text" placeholder="滑り落ち">
+      <div class="modal-buttons">
+        <button id="cat-cancel">Cancel</button>
+        <button id="cat-add">Add</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

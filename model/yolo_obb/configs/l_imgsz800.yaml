@@ -1,0 +1,12 @@
+# l × 高解像 (8GB VRAM tight、batch 1 で回す)
+model: l
+epochs: 100
+batch: 1
+imgsz: 800
+freeze: 0
+patience: 20
+optimizer: auto
+mosaic: 1.0
+mixup: 0.0
+run_name: l_imgsz800
+seed: 42

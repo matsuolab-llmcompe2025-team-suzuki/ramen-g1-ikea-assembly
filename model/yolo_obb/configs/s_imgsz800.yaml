@@ -1,0 +1,12 @@
+# leg_tip / hole が小さい (avg 0.07 normalized) ので imgsz 上げて解像度確保
+model: s
+epochs: 100
+batch: 6
+imgsz: 800
+freeze: 0
+patience: 20
+optimizer: auto
+mosaic: 1.0
+mixup: 0.0
+run_name: s_imgsz800
+seed: 42

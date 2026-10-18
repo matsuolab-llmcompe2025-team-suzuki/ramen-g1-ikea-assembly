@@ -1,0 +1,19 @@
+# Label Studio ワークスペース (内部 DB, 画像, tasks.json, exports) は共有しない
+workspace/
+
+# アノテ結果 (画像 + YOLO OBB txt) は共有しない
+# datasets/v*/ 配下の images/ labels/ は個人ローカルに置く
+datasets/*/images/
+datasets/*/labels/
+datasets/*/exports/
+
+# pixi 環境 (pixi.lock は dep freeze のため git 管理)
+.pixi/
+
+# Python 系
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# run logs
+logs/

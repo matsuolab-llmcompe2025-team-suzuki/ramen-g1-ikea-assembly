@@ -1,0 +1,17 @@
+# YOLO OBB dataset config (Issue #77 v4_flat)
+# 元 390 train + synthetic (flat) を train に、val は元のまま (fully-fixed)
+path: /home/ubuntu/work_dir/iros/iros_2026_ramen/data/yolo_obb
+train:
+  - dataset/images/train
+  - augmentation/synthetic/v4_flat/images
+val: dataset/images/val
+
+nc: 7
+names:
+  0: workspace
+  1: leg
+  2: leg_tip
+  3: hole
+  4: table_top
+  5: hand_right
+  6: hand_left

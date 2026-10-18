@@ -1,0 +1,12 @@
+# m × mosaic 抑制
+model: m
+epochs: 100
+batch: 4
+imgsz: 640
+freeze: 0
+patience: 20
+optimizer: auto
+mosaic: 0.5
+mixup: 0.0
+run_name: m_lowaug
+seed: 42

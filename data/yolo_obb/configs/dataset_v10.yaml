@@ -1,0 +1,22 @@
+# YOLO OBB dataset config (Issue #108 v10)
+# annotation 拡張後 (10 ep = 966 file) の dataset。build_dataset で
+# `--train-only-eps 62,120,510,513,515,517,518,519,531 --seed 42` で組む想定。
+# augment は既存 3 dir (v5_material_random, v8_zoomout_random, v4_flat) 継承 = v8_bg stack。
+# 注意: augment 側は元 ep 60/62 (390 image) 由来のみ、新 ep (120/510/513-519/531) には augment なし。
+path: /home/ubuntu/work_dir/iros/iros_2026_ramen/data/yolo_obb
+train:
+  - dataset/images/train
+  - augmentation/synthetic/v5_material_random/images
+  - augmentation/synthetic/v8_zoomout_random/images
+  - augmentation/synthetic/v4_flat/images
+val: dataset/images/val
+
+nc: 7
+names:
+  0: workspace
+  1: leg
+  2: leg_tip
+  3: hole
+  4: table_top
+  5: hand_right
+  6: hand_left

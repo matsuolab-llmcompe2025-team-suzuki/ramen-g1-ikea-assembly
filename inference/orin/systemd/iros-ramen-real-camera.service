@@ -1,0 +1,21 @@
+[Unit]
+Description=IROS RAMEN read-only G1 state and three-camera ROS bringup
+Wants=network-online.target docker.service
+After=network-online.target docker.service systemd-udev-settle.service
+Conflicts=avp_teleimager.service
+
+[Service]
+Type=simple
+User=unitree
+WorkingDirectory=/home/unitree/iros_2026_ramen
+Environment=HOME=/home/unitree
+ExecStartPre=+/home/unitree/iros_2026_ramen/inference/orin/scripts/keep_realsense_usb_awake.sh
+ExecStart=/home/unitree/iros_2026_ramen/inference/orin/scripts/run_real_camera_bringup.sh
+Restart=on-failure
+RestartSec=2
+KillSignal=SIGINT
+KillMode=control-group
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target

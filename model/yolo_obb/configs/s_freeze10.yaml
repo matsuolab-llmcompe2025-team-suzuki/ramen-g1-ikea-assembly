@@ -1,0 +1,12 @@
+# small dataset (100 枚) の backbone overfit 抑制: 先頭 10 layer freeze
+model: s
+epochs: 100
+batch: 8
+imgsz: 640
+freeze: 10
+patience: 20
+optimizer: auto
+mosaic: 1.0
+mixup: 0.0
+run_name: s_freeze10
+seed: 42

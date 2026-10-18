@@ -1,0 +1,20 @@
+# Issue #108 v5_material: workspace chroma-key material aug (連続 random)
+# base: m_lowaug (v3 と bit-perfect 同一 hyperparams)、data だけ v5_material に切替
+# ざっくり内訳:
+#   train = 元 390 + augmentation/synthetic/v5_material_random (≈1170) = ≈1560 (v4_flat と同 volume)
+#   val   = 元 fully-fixed 10 imgs (v3/v4 と同一)
+model: m
+epochs: 100
+batch: 4
+imgsz: 640
+freeze: 0
+patience: 20
+optimizer: auto
+mosaic: 0.5
+mixup: 0.0
+run_name: m_lowaug_v5_material
+seed: 42
+data: data/yolo_obb/configs/dataset_v5_material.yaml
+# WSL2 memory 15GB 制約下では default workers=8 で OOM kill されるため 2 に制限
+# (tech_lab の rt-detr v2 も同 constraint で num_workers=2 運用実績あり)
+workers: 2

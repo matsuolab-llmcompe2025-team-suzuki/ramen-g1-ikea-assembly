@@ -1,0 +1,12 @@
+# 100 枚では mosaic aug が small class を破壊する可能性 → 抑制版
+model: s
+epochs: 100
+batch: 8
+imgsz: 640
+freeze: 0
+patience: 20
+optimizer: auto
+mosaic: 0.5
+mixup: 0.0
+run_name: s_lowaug
+seed: 42

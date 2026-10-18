@@ -1,0 +1,104 @@
+<?xml version="1.0"?>
+<robot name="g1_competition_proxy">
+  <material name="body_gray"><color rgba="0.55 0.58 0.62 1.0"/></material>
+  <material name="joint_blue"><color rgba="0.05 0.30 0.85 1.0"/></material>
+  <material name="hand_yellow"><color rgba="0.95 0.70 0.05 1.0"/></material>
+
+  <link name="base_link">
+    <visual>
+      <origin xyz="0 0 0.85" rpy="0 0 0"/>
+      <geometry><box size="0.28 0.18 0.55"/></geometry>
+      <material name="body_gray"/>
+    </visual>
+    <visual>
+      <origin xyz="0 0 1.22" rpy="0 0 0"/>
+      <geometry><sphere radius="0.11"/></geometry>
+      <material name="body_gray"/>
+    </visual>
+  </link>
+
+  <!-- Fallback proxy markers for LeRobot observation.state.robot_q_current[0:36].
+       Dataset replay uses the official Unitree G1 + Dex1 URDF by default. -->
+  <joint name="g1_joint_00" type="continuous"><parent link="base_link"/><child link="g1_joint_00_link"/><origin xyz="-0.34 0.18 0.98" rpy="0 0 0"/><axis xyz="0 0 1"/></joint>
+  <link name="g1_joint_00_link"><visual><origin xyz="0.07 0 0"/><geometry><box size="0.14 0.025 0.025"/></geometry><material name="joint_blue"/></visual></link>
+  <joint name="g1_joint_01" type="continuous"><parent link="base_link"/><child link="g1_joint_01_link"/><origin xyz="-0.34 0.18 0.90" rpy="0 0 0"/><axis xyz="0 1 0"/></joint>
+  <link name="g1_joint_01_link"><visual><origin xyz="0.07 0 0"/><geometry><box size="0.14 0.025 0.025"/></geometry><material name="joint_blue"/></visual></link>
+  <joint name="g1_joint_02" type="continuous"><parent link="base_link"/><child link="g1_joint_02_link"/><origin xyz="-0.34 0.18 0.82" rpy="0 0 0"/><axis xyz="1 0 0"/></joint>
+  <link name="g1_joint_02_link"><visual><origin xyz="0.07 0 0"/><geometry><box size="0.14 0.025 0.025"/></geometry><material name="joint_blue"/></visual></link>
+  <joint name="g1_joint_03" type="continuous"><parent link="base_link"/><child link="g1_joint_03_link"/><origin xyz="-0.34 0.18 0.74" rpy="0 0 0"/><axis xyz="0 0 1"/></joint>
+  <link name="g1_joint_03_link"><visual><origin xyz="0.07 0 0"/><geometry><box size="0.14 0.025 0.025"/></geometry><material name="joint_blue"/></visual></link>
+  <joint name="g1_joint_04" type="continuous"><parent link="base_link"/><child link="g1_joint_04_link"/><origin xyz="-0.34 0.18 0.66" rpy="0 0 0"/><axis xyz="0 1 0"/></joint>
+  <link name="g1_joint_04_link"><visual><origin xyz="0.07 0 0"/><geometry><box size="0.14 0.025 0.025"/></geometry><material name="joint_blue"/></visual></link>
+  <joint name="g1_joint_05" type="continuous"><parent link="base_link"/><child link="g1_joint_05_link"/><origin xyz="-0.34 0.18 0.58" rpy="0 0 0"/><axis xyz="1 0 0"/></joint>
+  <link name="g1_joint_05_link"><visual><origin xyz="0.07 0 0"/><geometry><box size="0.14 0.025 0.025"/></geometry><material name="joint_blue"/></visual></link>
+
+  <joint name="g1_joint_06" type="continuous"><parent link="base_link"/><child link="g1_joint_06_link"/><origin xyz="-0.14 0.22 0.98" rpy="0 0 0"/><axis xyz="0 0 1"/></joint>
+  <link name="g1_joint_06_link"><visual><origin xyz="0.07 0 0"/><geometry><box size="0.14 0.025 0.025"/></geometry><material name="joint_blue"/></visual></link>
+  <joint name="g1_joint_07" type="continuous"><parent link="base_link"/><child link="g1_joint_07_link"/><origin xyz="-0.14 0.22 0.90" rpy="0 0 0"/><axis xyz="0 1 0"/></joint>
+  <link name="g1_joint_07_link"><visual><origin xyz="0.07 0 0"/><geometry><box size="0.14 0.025 0.025"/></geometry><material name="joint_blue"/></visual></link>
+  <joint name="g1_joint_08" type="continuous"><parent link="base_link"/><child link="g1_joint_08_link"/><origin xyz="-0.14 0.22 0.82" rpy="0 0 0"/><axis xyz="1 0 0"/></joint>
+  <link name="g1_joint_08_link"><visual><origin xyz="0.07 0 0"/><geometry><box size="0.14 0.025 0.025"/></geometry><material name="joint_blue"/></visual></link>
+  <joint name="g1_joint_09" type="continuous"><parent link="base_link"/><child link="g1_joint_09_link"/><origin xyz="-0.14 0.22 0.74" rpy="0 0 0"/><axis xyz="0 0 1"/></joint>
+  <link name="g1_joint_09_link"><visual><origin xyz="0.07 0 0"/><geometry><box size="0.14 0.025 0.025"/></geometry><material name="joint_blue"/></visual></link>
+  <joint name="g1_joint_10" type="continuous"><parent link="base_link"/><child link="g1_joint_10_link"/><origin xyz="-0.14 0.22 0.66" rpy="0 0 0"/><axis xyz="0 1 0"/></joint>
+  <link name="g1_joint_10_link"><visual><origin xyz="0.07 0 0"/><geometry><box size="0.14 0.025 0.025"/></geometry><material name="joint_blue"/></visual></link>
+  <joint name="g1_joint_11" type="continuous"><parent link="base_link"/><child link="g1_joint_11_link"/><origin xyz="-0.14 0.22 0.58" rpy="0 0 0"/><axis xyz="1 0 0"/></joint>
+  <link name="g1_joint_11_link"><visual><origin xyz="0.07 0 0"/><geometry><box size="0.14 0.025 0.025"/></geometry><material name="joint_blue"/></visual></link>
+
+  <joint name="g1_joint_12" type="continuous"><parent link="base_link"/><child link="g1_joint_12_link"/><origin xyz="0.14 0.22 0.98" rpy="0 0 0"/><axis xyz="0 0 1"/></joint>
+  <link name="g1_joint_12_link"><visual><origin xyz="0.07 0 0"/><geometry><box size="0.14 0.025 0.025"/></geometry><material name="joint_blue"/></visual></link>
+  <joint name="g1_joint_13" type="continuous"><parent link="base_link"/><child link="g1_joint_13_link"/><origin xyz="0.14 0.22 0.90" rpy="0 0 0"/><axis xyz="0 1 0"/></joint>
+  <link name="g1_joint_13_link"><visual><origin xyz="0.07 0 0"/><geometry><box size="0.14 0.025 0.025"/></geometry><material name="joint_blue"/></visual></link>
+  <joint name="g1_joint_14" type="continuous"><parent link="base_link"/><child link="g1_joint_14_link"/><origin xyz="0.14 0.22 0.82" rpy="0 0 0"/><axis xyz="1 0 0"/></joint>
+  <link name="g1_joint_14_link"><visual><origin xyz="0.07 0 0"/><geometry><box size="0.14 0.025 0.025"/></geometry><material name="joint_blue"/></visual></link>
+  <joint name="g1_joint_15" type="continuous"><parent link="base_link"/><child link="g1_joint_15_link"/><origin xyz="0.14 0.22 0.74" rpy="0 0 0"/><axis xyz="0 0 1"/></joint>
+  <link name="g1_joint_15_link"><visual><origin xyz="0.07 0 0"/><geometry><box size="0.14 0.025 0.025"/></geometry><material name="joint_blue"/></visual></link>
+  <joint name="g1_joint_16" type="continuous"><parent link="base_link"/><child link="g1_joint_16_link"/><origin xyz="0.14 0.22 0.66" rpy="0 0 0"/><axis xyz="0 1 0"/></joint>
+  <link name="g1_joint_16_link"><visual><origin xyz="0.07 0 0"/><geometry><box size="0.14 0.025 0.025"/></geometry><material name="joint_blue"/></visual></link>
+  <joint name="g1_joint_17" type="continuous"><parent link="base_link"/><child link="g1_joint_17_link"/><origin xyz="0.14 0.22 0.58" rpy="0 0 0"/><axis xyz="1 0 0"/></joint>
+  <link name="g1_joint_17_link"><visual><origin xyz="0.07 0 0"/><geometry><box size="0.14 0.025 0.025"/></geometry><material name="joint_blue"/></visual></link>
+
+  <joint name="g1_joint_18" type="continuous"><parent link="base_link"/><child link="g1_joint_18_link"/><origin xyz="0.34 0.18 0.98" rpy="0 0 0"/><axis xyz="0 0 1"/></joint>
+  <link name="g1_joint_18_link"><visual><origin xyz="0.07 0 0"/><geometry><box size="0.14 0.025 0.025"/></geometry><material name="joint_blue"/></visual></link>
+  <joint name="g1_joint_19" type="continuous"><parent link="base_link"/><child link="g1_joint_19_link"/><origin xyz="0.34 0.18 0.90" rpy="0 0 0"/><axis xyz="0 1 0"/></joint>
+  <link name="g1_joint_19_link"><visual><origin xyz="0.07 0 0"/><geometry><box size="0.14 0.025 0.025"/></geometry><material name="joint_blue"/></visual></link>
+  <joint name="g1_joint_20" type="continuous"><parent link="base_link"/><child link="g1_joint_20_link"/><origin xyz="0.34 0.18 0.82" rpy="0 0 0"/><axis xyz="1 0 0"/></joint>
+  <link name="g1_joint_20_link"><visual><origin xyz="0.07 0 0"/><geometry><box size="0.14 0.025 0.025"/></geometry><material name="joint_blue"/></visual></link>
+  <joint name="g1_joint_21" type="continuous"><parent link="base_link"/><child link="g1_joint_21_link"/><origin xyz="0.34 0.18 0.74" rpy="0 0 0"/><axis xyz="0 0 1"/></joint>
+  <link name="g1_joint_21_link"><visual><origin xyz="0.07 0 0"/><geometry><box size="0.14 0.025 0.025"/></geometry><material name="joint_blue"/></visual></link>
+  <joint name="g1_joint_22" type="continuous"><parent link="base_link"/><child link="g1_joint_22_link"/><origin xyz="0.34 0.18 0.66" rpy="0 0 0"/><axis xyz="0 1 0"/></joint>
+  <link name="g1_joint_22_link"><visual><origin xyz="0.07 0 0"/><geometry><box size="0.14 0.025 0.025"/></geometry><material name="joint_blue"/></visual></link>
+  <joint name="g1_joint_23" type="continuous"><parent link="base_link"/><child link="g1_joint_23_link"/><origin xyz="0.34 0.18 0.58" rpy="0 0 0"/><axis xyz="1 0 0"/></joint>
+  <link name="g1_joint_23_link"><visual><origin xyz="0.07 0 0"/><geometry><box size="0.14 0.025 0.025"/></geometry><material name="joint_blue"/></visual></link>
+
+  <joint name="g1_joint_24" type="continuous"><parent link="base_link"/><child link="g1_joint_24_link"/><origin xyz="-0.28 -0.18 0.44" rpy="0 0 0"/><axis xyz="0 0 1"/></joint>
+  <link name="g1_joint_24_link"><visual><origin xyz="0.07 0 0"/><geometry><box size="0.14 0.025 0.025"/></geometry><material name="joint_blue"/></visual></link>
+  <joint name="g1_joint_25" type="continuous"><parent link="base_link"/><child link="g1_joint_25_link"/><origin xyz="-0.17 -0.18 0.44" rpy="0 0 0"/><axis xyz="0 1 0"/></joint>
+  <link name="g1_joint_25_link"><visual><origin xyz="0.07 0 0"/><geometry><box size="0.14 0.025 0.025"/></geometry><material name="joint_blue"/></visual></link>
+  <joint name="g1_joint_26" type="continuous"><parent link="base_link"/><child link="g1_joint_26_link"/><origin xyz="-0.06 -0.18 0.44" rpy="0 0 0"/><axis xyz="1 0 0"/></joint>
+  <link name="g1_joint_26_link"><visual><origin xyz="0.07 0 0"/><geometry><box size="0.14 0.025 0.025"/></geometry><material name="joint_blue"/></visual></link>
+  <joint name="g1_joint_27" type="continuous"><parent link="base_link"/><child link="g1_joint_27_link"/><origin xyz="0.06 -0.18 0.44" rpy="0 0 0"/><axis xyz="0 0 1"/></joint>
+  <link name="g1_joint_27_link"><visual><origin xyz="0.07 0 0"/><geometry><box size="0.14 0.025 0.025"/></geometry><material name="joint_blue"/></visual></link>
+  <joint name="g1_joint_28" type="continuous"><parent link="base_link"/><child link="g1_joint_28_link"/><origin xyz="0.17 -0.18 0.44" rpy="0 0 0"/><axis xyz="0 1 0"/></joint>
+  <link name="g1_joint_28_link"><visual><origin xyz="0.07 0 0"/><geometry><box size="0.14 0.025 0.025"/></geometry><material name="joint_blue"/></visual></link>
+  <joint name="g1_joint_29" type="continuous"><parent link="base_link"/><child link="g1_joint_29_link"/><origin xyz="0.28 -0.18 0.44" rpy="0 0 0"/><axis xyz="1 0 0"/></joint>
+  <link name="g1_joint_29_link"><visual><origin xyz="0.07 0 0"/><geometry><box size="0.14 0.025 0.025"/></geometry><material name="joint_blue"/></visual></link>
+
+  <joint name="g1_joint_30" type="continuous"><parent link="base_link"/><child link="g1_joint_30_link"/><origin xyz="-0.28 -0.18 0.30" rpy="0 0 0"/><axis xyz="0 0 1"/></joint>
+  <link name="g1_joint_30_link"><visual><origin xyz="0.07 0 0"/><geometry><box size="0.14 0.025 0.025"/></geometry><material name="joint_blue"/></visual></link>
+  <joint name="g1_joint_31" type="continuous"><parent link="base_link"/><child link="g1_joint_31_link"/><origin xyz="-0.17 -0.18 0.30" rpy="0 0 0"/><axis xyz="0 1 0"/></joint>
+  <link name="g1_joint_31_link"><visual><origin xyz="0.07 0 0"/><geometry><box size="0.14 0.025 0.025"/></geometry><material name="joint_blue"/></visual></link>
+  <joint name="g1_joint_32" type="continuous"><parent link="base_link"/><child link="g1_joint_32_link"/><origin xyz="-0.06 -0.18 0.30" rpy="0 0 0"/><axis xyz="1 0 0"/></joint>
+  <link name="g1_joint_32_link"><visual><origin xyz="0.07 0 0"/><geometry><box size="0.14 0.025 0.025"/></geometry><material name="joint_blue"/></visual></link>
+  <joint name="g1_joint_33" type="continuous"><parent link="base_link"/><child link="g1_joint_33_link"/><origin xyz="0.06 -0.18 0.30" rpy="0 0 0"/><axis xyz="0 0 1"/></joint>
+  <link name="g1_joint_33_link"><visual><origin xyz="0.07 0 0"/><geometry><box size="0.14 0.025 0.025"/></geometry><material name="joint_blue"/></visual></link>
+  <joint name="g1_joint_34" type="continuous"><parent link="base_link"/><child link="g1_joint_34_link"/><origin xyz="0.17 -0.18 0.30" rpy="0 0 0"/><axis xyz="0 1 0"/></joint>
+  <link name="g1_joint_34_link"><visual><origin xyz="0.07 0 0"/><geometry><box size="0.14 0.025 0.025"/></geometry><material name="joint_blue"/></visual></link>
+  <joint name="g1_joint_35" type="continuous"><parent link="base_link"/><child link="g1_joint_35_link"/><origin xyz="0.28 -0.18 0.30" rpy="0 0 0"/><axis xyz="1 0 0"/></joint>
+  <link name="g1_joint_35_link"><visual><origin xyz="0.07 0 0"/><geometry><box size="0.14 0.025 0.025"/></geometry><material name="joint_blue"/></visual></link>
+
+  <joint name="left_hand" type="continuous"><parent link="base_link"/><child link="left_hand_link"/><origin xyz="-0.46 0.22 0.72" rpy="0 0 0"/><axis xyz="0 0 1"/></joint>
+  <link name="left_hand_link"><visual><origin xyz="0.06 0 0"/><geometry><box size="0.12 0.04 0.04"/></geometry><material name="hand_yellow"/></visual></link>
+  <joint name="right_hand" type="continuous"><parent link="base_link"/><child link="right_hand_link"/><origin xyz="0.46 0.22 0.72" rpy="0 0 0"/><axis xyz="0 0 1"/></joint>
+  <link name="right_hand_link"><visual><origin xyz="0.06 0 0"/><geometry><box size="0.12 0.04 0.04"/></geometry><material name="hand_yellow"/></visual></link>
+</robot>
